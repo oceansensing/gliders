@@ -6,7 +6,7 @@
   "workspaces": [
     "packages/*"
   ],
-  "description": "Glider data visualization — IOOS Glider DAC and raw Slocum files, in the browser",
+  "description": "Glider data visualization \u2014 IOOS Glider DAC and raw Slocum files, in the browser",
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
@@ -14,15 +14,15 @@
     "check": "astro check",
     "astro": "astro",
     "data:deployments": "node scripts/fetch-deployments.mjs",
-    "spike:erddap": "node scripts/spike-erddap.mjs",
+    "check:docs": "node scripts/check-docs.mjs",
+    "check:vendored": "node scripts/check-vendored.mjs",
+    "test:teos10": "node scripts/test-teos10.mjs",
     "test:erddap": "node scripts/test-erddap.mjs",
     "test:plot": "node scripts/test-plot.mjs",
     "test:derive": "node scripts/test-derive.mjs",
-    "test:teos10": "node scripts/test-teos10.mjs",
     "test:contrast": "node scripts/test-contrast.mjs",
     "test:pages": "node scripts/test-pages.mjs",
-    "check:vendored": "node scripts/check-vendored.mjs",
-    "verify": "npm run build && npm run check && npm run test:teos10 && npm run test:erddap && npm run test:plot && npm run test:derive && npm run test:contrast && npm run test:pages"
+    "verify": "npm run build && npm run check && npm run check:docs && npm run test:teos10 && npm run test:erddap && npm run test:plot && npm run test:derive && npm run test:contrast && npm run test:pages"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.3.0",

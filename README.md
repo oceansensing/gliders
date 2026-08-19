@@ -12,24 +12,42 @@ seawater properties are computed from TEOS-10 as you look at them.
 
 ## What it shows
 
-For a deployment:
+### Every deployment, on one map
 
-- **The track**, coloured by time, over a bathymetric basemap.
+All 2,534 deployments back to 2003, searchable by glider, institution or
+year. The map draws each mission's **actual track**, coloured on a shared
+clock so two gliders out the same season look alike and a 2019 deployment
+does not, with a dot at each glider's last known position. Click any track to
+open it.
+
+### One deployment
+
+- **The track**, coloured by any variable the mission carries — temperature,
+  salinity, σ₀, chlorophyll — with your own colour scale and range.
 - **A T–S diagram** in Absolute Salinity and Conservative Temperature,
   coloured by depth, with σ₀ isopycnals traced behind the points.
-- **Sections** against time and depth of everything the deployment carries —
-  temperature, salinity, conductivity, oxygen, chlorophyll, CDOM, backscatter,
-  and every flight-computer channel — plus the properties computed here:
-  Conservative Temperature, Absolute Salinity, potential temperature,
-  in-situ density, potential density anomaly σ₀, spiciness π₀ and sound speed.
-- **A profile explorer** that loads a chosen time window at full resolution.
+- **Sections** against time and depth of everything the deployment carries,
+  plus the properties computed here: Conservative Temperature, Absolute
+  Salinity, potential temperature, in-situ density, σ₀, spiciness π₀ and
+  sound speed.
+- **Two profile panels** side by side, so temperature can be read against
+  salinity.
 
-Any variable can go on any axis, with its own colour scale and window. Every
-figure exports a PNG.
+Narrow to any stretch of the mission with the clocks at the top or by
+**dragging across a section**, and it reloads at finer resolution — at full
+rate if the window is small enough. Every view is a link.
 
-For raw Slocum files (`/local/`): the same figures, from `sbd`/`tbd`/`dbd`/
-`ebd`/`mbd`/`nbd` files and their compressed forms, decoded in the tab.
-Nothing is uploaded.
+### Raw Slocum files
+
+Drop `sbd`/`tbd`/`dbd`/`ebd`/`mbd`/`nbd` files and their `.cac` sensor lists
+on the [local files](https://oceansensing.org/gliders/local/) page and get
+the same figures. Nothing is uploaded; the decode happens in the tab.
+
+### Taking figures away
+
+Every figure and the map export a **publication-quality PNG** — 3×
+resolution, title and caption drawn in, boxed, on white, and for the map the
+colour bar and basemap attribution too.
 
 ## Running it
 
@@ -60,25 +78,24 @@ component scripts, Leaflet for the maps. Four workspace packages:
 
 | package | what it is |
 |---|---|
-| `packages/erddap` | the tabledap client: catalog, dataset metadata, chunked and decimated fetching, QARTOD filtering |
-| `packages/plot` | the SVG scatter/line engine with a colour axis, and 20 colormaps |
+| `packages/erddap` | the tabledap client: catalog, metadata, chunked and decimated fetching, QARTOD filtering |
+| `packages/plot` | the SVG scatter/line engine with a colour axis, 20 colormaps, and the PNG export |
 | `packages/teos10` | TEOS-10 evaluated from the Gibbs function, with the measured salinity-anomaly atlas |
 | `packages/slocum` | the Slocum dinkum-binary decoder |
 
 `teos10` and `slocum` are **copies** of the packages behind
-[oceansensing.org](https://oceansensing.org/data/slocum/), which is where
-they are maintained; `check:vendored` reports when they drift.
-`packages/plot` was extracted from that site's Slocum decoder, where the
-same engine draws the same kind of figure.
+[oceansensing.org](https://oceansensing.org/data/slocum/), where they are
+maintained; `check:vendored` reports when they drift. `packages/plot` was
+extracted from that site's Slocum decoder.
 
-The two data paths meet at one interface: a map of `Float64Array` columns
-and a list of what can be plotted. The DAC path and the Slocum path both
-produce one, which is why the same map, sections, T–S diagram and profile
-explorer serve both.
+The two data paths meet at one interface — a map of `Float64Array` columns and
+a list of what can be plotted — which is why the same map, sections, T–S
+diagram and profiles serve both the DAC and a decoded file.
 
-`CLAUDE.md` records the measurements the design rests on — what a request to
-the DAC actually costs, why the windows are sized by time rather than rows,
-and the failures that were found by running it.
+`CLAUDE.md` records the measurements the design rests on: what a request to
+the DAC actually costs, why the depth bin is chosen per glider, why colour
+limits are percentiles, and the failures that were only found by running it.
+`PLAN.md` says what is built, what was decided, and what is still open.
 
 ## Licence
 

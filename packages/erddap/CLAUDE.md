@@ -70,6 +70,30 @@ electa's bin gave 44,592 rather than 93,000.
 A finer bin costs **no server time**: it is applied after the read. What it
 costs is bytes, parse and points — electa goes 2.1 MB → 8.0 MB.
 
+**`binMetres: 0` puts full rate on the ladder as its finest rung.** A reader
+asking for one day of an eleven-day mission is asking for a fortieth of it, so
+every sample the glider took fits inside the same budget the whole record
+could not: 12 hours of `electa` is 5,588 rows unbinned. The caller decides
+where the ladder starts — the deployment page starts at 1 m for a whole
+mission and at full rate for a chosen window — and the budget decides where it
+stops.
+
+## `every`: a coarse track in one request
+
+`orderByClosest("time/6hours")` gives one fix per interval with no depth
+grouping, which is what a *track* needs and nothing else does. A whole mission
+comes back as a few dozen points:
+
+| | rows | bytes | wall |
+|---|---|---|---|
+| `electa`, 11 days | 46 | 2.9 KB | 0.21 s |
+| `ru29`, 2 months | 225 | 14.6 KB | 0.12 s |
+
+So drawing sixty tracks on the catalog map is cheap per request and expensive
+only in the *number* of them — which is why they are capped and fetched six at
+a time. `every` and `binMetres` are mutually exclusive: a query takes one
+`orderByClosest`.
+
 **Concurrency is 3, and more does not help.** Four parallel one-day requests
 measured 4.3 s wall against ~4.4 s of serial time — the server queues rather
 than parallelises. The concurrency is there so a request is in flight while
