@@ -363,10 +363,7 @@ or fewer fixes on the far side — strays; the rest are two deployments in one
 record. A run of one is not a line, so a stray simply stops being drawn.
 
 **36 archived missions of 2,534 claim a span the data does not fill**, 4,364
-glider-days of 163,000. The catalog's `days` column still reports what the DAC
-reports, because that is what the DAC's `minTime`/`maxTime` say and rewriting
-another archive's metadata under its own name is worse than repeating it. The
-map no longer repeats it.
+glider-days of 163,000 — and the table used to repeat it. See below.
 
 Both **break the line rather than bridge it**, which is what the plots do with
 a gap and for the same reason. A fix unreachable from *both* neighbours while
@@ -398,6 +395,46 @@ Finding that out is what the baked clock was worth: without the elapsed time
 those 474 steps are indistinguishable from transport. Quantised to ten
 minutes, 0.30 MB across the archive against 1.02 MB at full precision, a 1.4%
 error on a six-hour step.
+
+### The table reports the span the positions fill
+
+Printing 846 days as a duration is repeating an arithmetic mistake somebody
+else made, so where the positions are known the table uses their span for
+`start`, `last report` and `days`, and for sorting by any of them. So does the
+colour clock, which one stray fix would otherwise stretch for every track on
+screen.
+
+The threshold is not a judgement call — the difference between the two spans
+is sharply bimodal:
+
+| | claimed minus filled |
+|---|---|
+| median mission | 0.05 days |
+| 95th percentile | 0.20 |
+| 99th | 15.6 |
+| worst | 759.9 |
+
+Under a quarter of a day it is the six-hourly sampling and means nothing;
+**47 missions of 2,475 differ by more than a day**, and for those the claim is
+empty span. A day is the gap between two populations rather than a number
+anyone picked.
+
+A corrected cell wears a dotted underline and carries the catalog's own claim
+on hover — the reader is looking at somebody else's archive and is entitled to
+know which number is whose. An underline rather than a colour, because colour
+on this site means a value.
+
+It is known only once a track is in, so the table corrects itself when the
+archive loads. That needed `render` split in two: the row-drawing half is
+called again when a correction lands, and the whole of `render` is not,
+because it restarts the very load that produced the correction.
+
+**`isActive` deliberately keeps the DAC's `end`.** It decides whether a
+mission is fetched live or read from a shard, and the correction is only known
+after that — keying it on the correction would be a mission classing itself.
+Checked against the DAC, none of the 49 currently-active deployments has a
+position record stopping more than a day before its catalog says; the
+stretched ones are all long finished.
 
 ### A stretch is coloured by when it happened
 

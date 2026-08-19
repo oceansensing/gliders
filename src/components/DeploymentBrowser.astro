@@ -163,6 +163,16 @@
     text-align: end;
   }
 
+  /* A date or a duration this page worked out, because the catalog's own is
+     the end of a stray record rather than of the mission. Marked so it can be
+     told from the 2,487 that are simply what the DAC says, and underlined
+     rather than coloured because colour on this site means a value. */
+  [data-rows] td.fixed {
+    text-decoration: underline dotted var(--border-strong);
+    text-underline-offset: 0.25em;
+    cursor: help;
+  }
+
   [data-rows] .id {
     display: block;
     font-family: var(--font-mono);
@@ -347,8 +357,66 @@
   const trackLayer = L.layerGroup().addTo(map);
 
   const now = () => Date.now() / 1000;
+  /**
+   * Deliberately the catalog's own `end` and not the corrected one below.
+   *
+   * Two reasons. It decides whether a mission is fetched live or read from a
+   * shard, and the correction is only known *after* that, so keying it on the
+   * correction would be a mission classing itself. And it is not needed:
+   * checked against the DAC, **none of the 49 currently-active deployments**
+   * has a position record that stops more than a day before its catalog says
+   * — the stretched ones are all long finished.
+   */
   const isActive = (d: DeploymentSummary) => now() - d.end < ACTIVE_DAYS * 86400;
-  const days = (d: DeploymentSummary) => Math.max(0, (d.end - d.start) / 86400);
+
+  /**
+   * **When the mission actually ran, which is not always what the DAC says
+   * it ran.**
+   *
+   * A dataset's `minTime`/`maxTime` are the ends of whatever was filed under
+   * that id, and one stray record moves them a long way.
+   * `cp_374-20140416T1634-delayed` is filed as 846 days: 344 fixes over 86
+   * days in the spring of 2014, then a single fix 760 days later, dated the
+   * day a *different* `cp_374` deployment ended. Its sibling is filed as 458
+   * and is 75. Reporting those as durations is repeating an arithmetic
+   * mistake somebody else made.
+   *
+   * So where the positions are known, the span they fill is used instead. The
+   * two agree almost always and the threshold is not a judgement call — the
+   * difference is sharply bimodal:
+   *
+   * | | claimed span minus filled span |
+   * |---|---|
+   * | median mission | 0.05 days |
+   * | 95th percentile | 0.20 |
+   * | 99th | 15.6 |
+   * | worst | 759.9 |
+   *
+   * Below a quarter of a day it is the six-hourly sampling and means nothing.
+   * **47 missions of 2,475 differ by more than a day**, and for those the
+   * claim is empty span. A day is the gap between the two populations, not a
+   * number anyone picked.
+   *
+   * Known only once a track is in, so the table corrects itself when the
+   * archive loads; until then, and for a mission with no positions, it says
+   * what the DAC says. Every row that has been corrected says so on hover.
+   */
+  const observed = new Map<string, { from: number; to: number }>();
+  const CORRECTION_S = 86400;
+  /** Bumped whenever a correction lands, so the table knows to redraw. */
+  let corrections = 0;
+  let rowsAt = -1;
+
+  function seen(d: DeploymentSummary): { from: number; to: number } | null {
+    const o = observed.get(d.id);
+    if (!o) return null;
+    const claimed = d.end - d.start;
+    return claimed - (o.to - o.from) > CORRECTION_S ? o : null;
+  }
+
+  const startOf = (d: DeploymentSummary) => seen(d)?.from ?? d.start;
+  const endOf = (d: DeploymentSummary) => seen(d)?.to ?? d.end;
+  const days = (d: DeploymentSummary) => Math.max(0, (endOf(d) - startOf(d)) / 86400);
   const date = (t: number) =>
     Number.isFinite(t) ? new Date(t * 1000).toISOString().slice(0, 10) : '—';
 
@@ -383,14 +451,32 @@
       if (key === 'title') d = a.title.localeCompare(b.title);
       else if (key === 'institution') d = a.institution.localeCompare(b.institution);
       else if (key === 'days') d = days(a) - days(b);
-      else d = a[key] - b[key];
+      /* The same numbers the column shows, or sorting by "Last report" puts a
+         mission that stopped in 2014 above one that stopped in 2016. */
+      else if (key === 'start') d = startOf(a) - startOf(b);
+      else d = endOf(a) - endOf(b);
       return d * sortDir;
     });
   }
 
   function render(): void {
     shown = sorted(filtered());
+    drawRows();
+    drawMarkers();
+    drawTracks();
+    say();
+    void loadTracks(shown);
+  }
 
+  /**
+   * The rows alone, with no side effects.
+   *
+   * Separate from `render` because a correction to a mission's dates arrives
+   * with its track, long after the table was first drawn — and `render`
+   * restarts the track load, so calling it from the code that *finishes* a
+   * track load is a loop.
+   */
+  function drawRows(): void {
     tbody.replaceChildren();
     const frag = document.createDocumentFragment();
     for (const d of shown.slice(0, limit)) {
@@ -422,16 +508,29 @@
       inst.textContent = d.institution;
       tr.append(inst);
 
-      for (const t of [d.start, d.end]) {
+      /* Where the two disagree, the row says what the data holds and carries
+         the catalog's own claim on hover — the reader is looking at somebody
+         else's archive and is entitled to know where the number came from. */
+      const fixed = seen(d);
+      const note = fixed
+        ? `The DAC's catalog gives ${date(d.start)} → ${date(d.end)}, `
+          + `${((d.end - d.start) / 86400).toFixed(0)} days. `
+          + 'Those are the ends of every record filed under this id; a stray '
+          + 'fix moves them. This is the span its positions actually fill.'
+        : '';
+
+      for (const t of [startOf(d), endOf(d)]) {
         const cell = document.createElement('td');
-        cell.className = 'when';
+        cell.className = fixed ? 'when fixed' : 'when';
         cell.textContent = date(t);
+        if (note) cell.title = note;
         tr.append(cell);
       }
 
       const dur = document.createElement('td');
-      dur.className = 'num';
+      dur.className = fixed ? 'num fixed' : 'num';
       dur.textContent = days(d) >= 1 ? days(d).toFixed(0) : '<1';
+      if (note) dur.title = note;
       tr.append(dur);
 
       frag.append(tr);
@@ -451,11 +550,7 @@
       btn.addEventListener('click', () => { limit = Infinity; render(); });
       more.append(btn);
     }
-
-    drawMarkers();
-    drawTracks();
-    say();
-    void loadTracks(shown);
+    rowsAt = corrections;
   }
 
   /**
@@ -512,6 +607,21 @@
    */
   const tracks = new Map<string, Swum[]>();
   let trackRun = 0;
+
+  /** Store a mission's runs, and the span its positions actually fill. */
+  function keep(id: string, runs: Swum[]): void {
+    tracks.set(id, runs);
+    const main = mainRuns(runs, (r) => r.pts.length);
+    const from = main[0]?.at?.[0];
+    const to = main[main.length - 1]?.at?.at(-1);
+    if (Number.isFinite(from) && Number.isFinite(to)) {
+      observed.set(id, { from: from as number, to: to as number });
+      const d = byId.get(id);
+      if (d && (d.end - d.start) - ((to as number) - (from as number)) > CORRECTION_S) {
+        corrections++;
+      }
+    }
+  }
 
   /**
    * Archived tracks, kept between visits.
@@ -660,7 +770,7 @@
             const d = byId.get(id);
             if (!d || baked.end !== Math.round(d.end)) continue;
             if (!tracks.has(id)) {
-              tracks.set(id, swimTrack(decodeTrack(baked.p, shard.precision),
+              keep(id, swimTrack(decodeTrack(baked.p, shard.precision),
                 decodeTimes(baked.t)));
             }
           }
@@ -689,7 +799,7 @@
         if (!tracks.has(d.id)) {
           const cached = cacheGet(d);
           if (cached) {
-            tracks.set(d.id, swimTrack(cached.path, cached.at));
+            keep(d.id, swimTrack(cached.path, cached.at));
             if (run === trackRun) scheduleDraw();
             continue;
           }
@@ -719,7 +829,7 @@
                and belongs where it can be changed without invalidating a
                cache — which it has been, twice. */
             cachePut(d, path, when);
-            tracks.set(d.id, swimTrack(path, when));
+            keep(d.id, swimTrack(path, when));
           } catch {
             /* A deployment whose positions cannot be read keeps its marker
                and no track. Not worth a message: the dot is still there and
@@ -742,8 +852,13 @@
     let lo = Infinity;
     let hi = -Infinity;
     for (const d of shown.slice(0, TRACK_CAP)) {
-      if (Number.isFinite(d.start)) lo = Math.min(lo, d.start);
-      if (Number.isFinite(d.end)) hi = Math.max(hi, d.end);
+      /* The span the positions fill, not the one the catalog claims: a single
+         stray fix dated two years after a mission ended would otherwise
+         stretch the clock every other track is coloured against. */
+      const a = startOf(d);
+      const b = endOf(d);
+      if (Number.isFinite(a)) lo = Math.min(lo, a);
+      if (Number.isFinite(b)) hi = Math.max(hi, b);
     }
     return Number.isFinite(lo) && hi > lo ? { lo, hi } : { lo: 0, hi: 1 };
   }
@@ -771,6 +886,10 @@
       drawTracks();
       drawMarkers();
       say();
+      /* A track can correct its mission's dates, and the table was drawn
+         before it arrived. Only when one actually did — 47 missions of 2,475
+         — and never `render`, which would restart the load that got here. */
+      if (corrections !== rowsAt) { shown = sorted(filtered()); drawRows(); }
     }, 16);
   }
 
@@ -811,7 +930,11 @@
          it was carried rather than swimming, the pen lifts: the position
          either side is real and the line between them is not. */
       const total = runs.reduce((n, r) => n + r.pts.length, 0);
-      const span = d.end > d.start ? d.end - d.start : 1;
+      /* Only the fallback for a record with no clock uses this; a record with
+         one is placed by its own timestamps below. Corrected all the same, so
+         the two paths cannot disagree about when a mission ran. */
+      const first = startOf(d);
+      const span = endOf(d) > first ? endOf(d) - first : 1;
       let before = 0;
 
       for (const run of runs) {
@@ -841,7 +964,7 @@
            */
           const at = run.at
             ? (run.at[i] + run.at[end]) / 2
-            : d.start + ((before + i + step / 2) / Math.max(1, total - 1)) * span;
+            : first + ((before + i + step / 2) / Math.max(1, total - 1)) * span;
           const t = Math.min(1, Math.max(0, (at - lo) / (hi - lo)));
           L.polyline(seg, {
             color: sample(TRACK_COLORMAP, t),

@@ -350,6 +350,24 @@ section('a track on the browser map can be clicked');
   ok('and says so with a cursor', /path\.track-hit\s*\{[^}]*cursor:\s*pointer/.test(ALL_CSS));
 }
 
+section('a corrected date says it has been corrected');
+
+{
+  /* 47 archived missions of 2,475 carry a `minTime`/`maxTime` a stray record
+     has stretched — `cp_374-20140416T1634-delayed` is filed as 846 days and
+     is 86. The table reports the span the positions fill, and marks the cell,
+     because the reader is looking at somebody else's archive and is entitled
+     to know which number is whose. jsdom does no layout, so this reads the
+     rule out of the built CSS. */
+  const rule = /\[data-rows\] td\.fixed\s*\{([^}]*)\}/.exec(ALL_CSS)?.[1] ?? '';
+  ok('the marker ships', rule.length > 0);
+  ok('it is an underline, not a colour', /text-decoration:\s*underline\s+dotted/.test(rule),
+    rule.trim().replace(/\s+/g, ' ') || 'no rule');
+  /* Colour on this site means a value; a provenance note is not one. */
+  ok('and carries no colour of its own', !/(^|;)\s*color:/.test(rule));
+  ok('the pointer says there is something to read', /cursor:\s*help/.test(rule));
+}
+
 section('a dot marking a glider is opaque and ringed');
 
 {

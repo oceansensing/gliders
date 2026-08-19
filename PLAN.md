@@ -94,20 +94,21 @@ Until it is scheduled, a mission that finished since the last bake is fetched
 live by each reader and cached in their `localStorage`, which is correct but
 is one request per reader.
 
-### The `days` column repeats a span the data does not fill
+### The correction stops at the catalog's edge
 
-36 archived missions of 2,534 — 4,364 glider-days of 163,000 — carry a
-`minTime`/`maxTime` in the DAC's catalog that a stray fix has stretched.
-`cp_374-20140416T1634-delayed` is filed as 846 days and is an 86-day mission
-plus one record dated two years later.
+47 archived missions of 2,475 carry a `minTime`/`maxTime` in the DAC's catalog
+that a stray record has stretched, and the table now reports the span the
+positions fill instead, marked and explained on hover.
 
-The map no longer repeats it: a gap over 30 days ends the record, so the
-stray is not drawn, does not place the dot and does not set the view. The
-table's `days` column still shows the DAC's number, on the grounds that
-rewriting another archive's metadata under its own name is worse than
-repeating it. If that call is revisited, the true extent is already in the
-baked shards for every archived mission — but not for active ones, so the
-column would be computed two ways.
+Two limits worth knowing. It needs a track, so a mission with no readable
+positions keeps the DAC's numbers; and `isActive` still keys on the DAC's
+`end`, because it is what decides whether a mission is fetched live at all
+(measured: no currently-active deployment is affected). If a live one ever is,
+that is the thread to pull.
+
+The same stray records presumably distort other fields of the DAC's catalog —
+the bounding boxes, at least. Nothing here reads those for anything but the
+fallback dot position, so it has not been looked into.
 
 ### The profile explorer lost its full-rate button
 
