@@ -30,6 +30,30 @@
   --accent-strong: #084a71;
   --accent-contrast: #ffffff;
 
+  /* -- color: the map's markers ------------------------------------ *
+   *
+   * **These three are deliberately absent from the dark block below, and
+   * that is the whole point of them.**
+   *
+   * Every other colour here is a colour *of the page*, so it flips with the
+   * theme. A dot on the map is not on the page — it is on Esri's World Ocean
+   * Base, which has one palette and does not know the theme exists. Marking
+   * the glider with `--accent` therefore made the marker *worse* in dark
+   * mode, where the accent turns pale (#5aa9d6) and the water under it stays
+   * pale: measured against the tiles, that dot came out at **1.04:1**, which
+   * is another way of spelling invisible.
+   *
+   * Chosen against the basemap as it actually renders. Five tiles over
+   * glider country, quantised: 97% of the map is #b5d3ee shelf blue, #e9e8e5
+   * land, #8cb0da slope blue, #779ecc deeper water, #d3dbbb olive. All
+   * light — so the marker's body is dark, and the ring is white to carry it
+   * across the rare dark tile and the near-black end of a track's colormap.
+   * `test:contrast` holds both to 3:1 against every one of those.
+   */
+  --map-here: #8f0b22;  /* where the glider is now  — 6.04:1 on shelf blue */
+  --map-past: #243447;  /* a mission that has ended — 8.16:1 on shelf blue */
+  --map-ring: #ffffff;  /* the halo — 8.39:1 where the water goes darkest  */
+
   /* -- typography -------------------------------------------------- */
   --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', monospace;

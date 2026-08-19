@@ -108,4 +108,86 @@ section('the two themes are the same shape');
   void a; void b;
 }
 
+section("the map's markers, against the map");
+
+/**
+ * **The one set of colours on the site that is not judged against the page.**
+ *
+ * A dot marking a glider sits on Esri's World Ocean Base, which has one
+ * palette and no idea the theme exists. Judging it against `--bg` says
+ * nothing; judging it against the water is the whole question. So these are
+ * measured against the basemap as it actually renders — five tiles over
+ * glider country (Mid-Atlantic shelf, Gulf Stream, Gulf of Mexico, an ocean
+ * basin and a global view), quantised to twelve colours, of which these six
+ * are 97% of the pixels.
+ *
+ * Two of the rare ones are in the list too, and so are the ends of the
+ * colormap the tracks are drawn in, because a dot frequently sits on its own
+ * track and `cmo.thermal` starts at very nearly black.
+ */
+{
+  const BASEMAP = [
+    ['shelf blue', '#b5d3ee', 34],
+    ['land', '#e9e8e5', 18],
+    ['slope blue', '#8cb0da', 16],
+    ['deeper water', '#779ecc', 12],
+    ['olive land', '#d3dbbb', 4],
+  ];
+  const DARKEST = [
+    ['abyssal blue', '#21507c'],
+    ['a track at its darkest', '#042333'],
+    ['a track mid-record', '#6b438b'],
+  ];
+
+  const here = light?.['map-here'];
+  const past = light?.['map-past'];
+  const ring = light?.['map-ring'];
+  ok('the marker tokens are defined', Boolean(here && past && ring),
+    `${here} / ${past} / ${ring}`);
+
+  /* Defining one of these per theme is the bug this whole set exists to
+     prevent: the accent it replaced turned pale in dark mode over water that
+     stayed pale, and measured 1.04:1 — the background, exactly. */
+  ok('and are not redefined per theme',
+    !dark?.['map-here'] && !dark?.['map-past'] && !dark?.['map-ring'],
+    'the basemap does not change with the theme, so neither may these');
+
+  if (here && past && ring) {
+    /* The body carries the marker across the 97% of the map that is light. */
+    for (const [what, colour] of [['here', here], ['past', past]]) {
+      for (const [name, bg, share] of BASEMAP) {
+        const r = ratio(colour, bg);
+        ok(`--map-${what} on ${name} (${share}% of the map)`, r >= 3,
+          `${r.toFixed(2)}:1, needs 3:1`);
+      }
+    }
+
+    /* And the ring carries it across everything the body cannot: a marker
+       with only one tone has no answer to a background of its own
+       luminance, and a track's colormap supplies every luminance there is. */
+    for (const [name, bg] of DARKEST) {
+      const r = ratio(ring, bg);
+      ok(`--map-ring on ${name}`, r >= 3, `${r.toFixed(2)}:1, needs 3:1`);
+    }
+
+    /* Worst case over the lot, which is the number worth quoting. */
+    for (const [what, colour] of [['here', here], ['past', past]]) {
+      const all = [...BASEMAP.map((b) => b[1]), ...DARKEST.map((b) => b[1])];
+      const worst = Math.min(...all.map((bg) =>
+        Math.max(ratio(colour, bg), ratio(ring, bg))));
+      ok(`--map-${what} is visible on anything the map can draw`, worst >= 3,
+        `worst of body-or-ring is ${worst.toFixed(2)}:1`);
+    }
+  }
+
+  /* The PNG export composites the same tiles, so it draws the same markers —
+     from its own copy of the values, which is the copy that can drift. */
+  const exporter = fs.readFileSync('src/lib/map-export.ts', 'utf8');
+  const mark = /const MARK = \{([\s\S]*?)\n\} as const;/.exec(exporter)?.[1] ?? '';
+  for (const [key, token] of [['here', here], ['past', past], ['ring', ring]]) {
+    const found = new RegExp(`${key}:\\s*'(#[0-9a-fA-F]{3,8})'`).exec(mark)?.[1];
+    check(`the exported PNG's ${key} marker matches the token`, found, token);
+  }
+}
+
 done();

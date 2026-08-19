@@ -275,7 +275,7 @@ export function makeTrack(element: HTMLElement, options: TrackOptions = {}): Tra
       radius: 5, weight: 2, className: 'track-start',
     }).bindTooltip('deployed').addTo(ends);
     L.circleMarker([last.lat, last.lon], {
-      radius: 6, weight: 2, className: 'track-end',
+      radius: 7, weight: 2.5, className: 'track-end',
     }).bindTooltip('last report').addTo(ends);
 
     endPoints = { first: [first.lat, first.lon], last: [last.lat, last.lon] };

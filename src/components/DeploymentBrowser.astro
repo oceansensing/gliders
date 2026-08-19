@@ -184,24 +184,44 @@
     vertical-align: 0.1em;
   }
 
-  /* A deployment still reporting, and one that has finished. Classes rather
-     than Leaflet's `color`/`fillColor` options so a theme switch restyles
-     every marker with no redraw — the rule the plots keep too. */
+  /**
+   * A deployment still reporting, and one that has finished.
+   *
+   * **Opaque, and ringed.** Both used to be translucent accent — 0.55 and
+   * 0.25 — which blends the dot toward whatever it is standing on, and what
+   * it is standing on is water the same colour. Measured against the tiles
+   * the map actually draws, the live dot came out at 1.09:1 in light mode
+   * and **1.04:1 in dark**, and the archived one at 1.05:1. A ratio of 1.0
+   * is the background.
+   *
+   * So the fill is solid and the colours are `--map-*`, which are fixed to
+   * the basemap rather than to the theme, for the reason set out where they
+   * are defined. The white ring is not decoration: nothing dark can be seen
+   * against the near-black end of a track's colormap, and nothing light can
+   * be seen against the pale shelf water, so the marker carries one of each
+   * and is never worse than 3.4:1 on anything the map can put behind it.
+   *
+   * Classes rather than Leaflet's `color`/`fillColor` options, so the rule
+   * lives with the palette — the one the plots keep too.
+   */
   .marker-live {
-    stroke: var(--accent);
-    fill: var(--accent);
-    fill-opacity: 0.55;
+    stroke: var(--map-ring);
+    fill: var(--map-here);
+    fill-opacity: 1;
   }
 
   .marker-past {
-    stroke: var(--text-muted);
-    fill: var(--text-muted);
-    fill-opacity: 0.25;
+    stroke: var(--map-ring);
+    fill: var(--map-past);
+    fill-opacity: 1;
   }
 
+  /* Hover cannot say it with opacity any more — the dot is already solid —
+     so it says it by thickening the ring, which reads at this size and
+     needs no second colour. */
   .marker-live:hover,
   .marker-past:hover {
-    fill-opacity: 0.85;
+    stroke-width: 4;
   }
 
   /**
@@ -666,9 +686,14 @@
       const lon = end ? end[1] : (d.west + d.east) / 2;
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
       const live = isActive(d);
+      /* The ring has to be wide enough to be a ring. At weight 1 it is a
+         hairline the tile's own texture eats; 2.5 and 2 hold up against the
+         bathymetry contours the basemap draws at about the same width — and
+         the radii grow to leave a body inside the ring. Whole numbers
+         because Leaflet rounds the radius into the path anyway. */
       const marker = L.circleMarker([lat, lon], {
-        radius: live ? 6 : 4,
-        weight: live ? 2 : 1,
+        radius: live ? 7 : 5,
+        weight: live ? 2.5 : 2,
         className: live ? 'marker-live' : 'marker-past',
       });
       // Built as DOM, not as an HTML string: the title and institution are

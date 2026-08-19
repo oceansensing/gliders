@@ -192,15 +192,20 @@
     opacity: 0.35;
   }
 
+  /* Where the glider went in, and where it last reported. Same rule as the
+     catalog's dots and for the same measured reason: these sit on Esri's
+     tiles, which do not follow the theme, so neither do they. Hollow for the
+     end that is finished, solid for the one that is the answer to "where is
+     it now" — a distinction that survives being printed in grey. */
   .track-start {
-    stroke: var(--text);
-    fill: var(--bg);
+    stroke: var(--map-past);
+    fill: var(--map-ring);
     fill-opacity: 1;
   }
 
   .track-end {
-    stroke: var(--accent);
-    fill: var(--accent);
-    fill-opacity: 0.9;
+    stroke: var(--map-ring);
+    fill: var(--map-here);
+    fill-opacity: 1;
   }
 </style>

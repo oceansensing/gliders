@@ -282,6 +282,48 @@ well as the id, so a deployment that reported again invalidates itself.
 Coordinates are rounded to four decimals — eleven metres, far finer than a
 six-hour fix, a third of the bytes.
 
+### The marker is coloured against the basemap, not against the theme
+
+Every other colour on the site is a colour *of the page* and flips with the
+theme. A dot on the map is not on the page — it is on Esri's tiles, which
+have one palette and do not know the theme exists. Marking the glider with
+`--accent` therefore made the marker **worse** in dark mode, where the accent
+turns pale and the water under it stays pale.
+
+Measured against the tiles as they render, with the fills at the
+`fill-opacity` they shipped at:
+
+| | colour | effective | vs the water |
+|---|---|---|---|
+| reporting, light | `--accent` @ 0.55 | `#145785` | 1.09:1 |
+| reporting, **dark** | `--accent` @ 0.55 | `#67a4d2` | **1.04:1** |
+| archived, light | `--text-muted` @ 0.25 | `#2e5377` | 1.05:1 |
+| archived, dark | `--text-muted` @ 0.25 | `#92afd2` | 1.01:1 |
+
+1.0 is the background. Two mistakes compounding: a translucent fill blends
+toward whatever it stands on, and what it stands on is water of the same hue.
+
+The basemap was sampled rather than guessed — five tiles over glider country,
+quantised — and **97% of it is light**: `#b5d3ee` shelf blue is a third of
+the map, then land at `#e9e8e5`, slope blue, `#779ecc` deeper water, olive.
+So the marker's body is dark and opaque: `--map-here` `#8f0b22` for a glider
+still reporting, `--map-past` `#243447` for a mission that has ended, 3.4:1
+and 4.6:1 at worst across that set, 6.0:1 and 8.2:1 on the shelf blue that is
+most of it.
+
+**One tone is not enough, and this is not a matter of picking a better one.**
+A track is coloured through `cmo.thermal`, which spans luminance 0.015 to
+0.863 — every luminance there is — so for any flat colour some part of the
+ramp matches it: measured across a dozen candidates, the best worst-case was
+1.2:1. Hence the white ring, which is 7.5:1 against the ramp exactly where
+the dark body is 1.3:1. Body or ring, never worse than 3.4:1 on anything the
+map can put behind it, and `test:contrast` holds all of it.
+
+The three values live in `tokens.css` and are **deliberately not redefined in
+the dark block** — that absence is the rule, so `test:contrast` asserts it.
+`map-export.ts` keeps the only other copy, because the PNG composites the
+same tiles; the same suite checks the two still agree.
+
 ### Two rules stand between an invisible hit line and a clickable one
 
 A 2.5 px stroke is very hard to hit and a diagonal one is worse, so each track
@@ -464,3 +506,8 @@ Each shipped, was found by running it, and now has a gate.
   `<select>` does nothing, and the track's menus are filled only once the data
   says which columns exist — so `?track=sigma0` fell back to time. The wanted
   value is held until there is a menu to receive it.
+- **The glider was marked in a colour the map was already wearing.** A
+  translucent accent-blue dot on Esri's blue water measured 1.09:1 in light
+  mode and 1.04:1 in dark — the second worse than the first, because the
+  marker followed the theme and the basemap did not. It passed every contrast
+  check on the site, all of which asked how it looked against the *page*.

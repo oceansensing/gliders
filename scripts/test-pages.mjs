@@ -350,6 +350,40 @@ section('a track on the browser map can be clicked');
   ok('and says so with a cursor', /path\.track-hit\s*\{[^}]*cursor:\s*pointer/.test(ALL_CSS));
 }
 
+section('a dot marking a glider is opaque and ringed');
+
+{
+  /**
+   * The dots were `--accent` at `fill-opacity: 0.55` and `0.25`, which is
+   * two mistakes that compound: a translucent fill blends toward whatever it
+   * is standing on, and what it is standing on is water of the same hue.
+   * Measured against the tiles the map actually draws, the live dot came out
+   * at 1.09:1 in light mode and **1.04:1 in dark** — a ratio of 1.0 being
+   * the background itself.
+   *
+   * `test:contrast` holds the values to 3:1 against the basemap. This holds
+   * the two things that would throw that away without changing a value:
+   * putting the translucency back, and theming them again.
+   */
+  for (const cls of ['marker-live', 'marker-past', 'track-start', 'track-end']) {
+    const rule = new RegExp(`\\.${cls}\\s*\\{([^}]*)\\}`).exec(ALL_CSS)?.[1] ?? '';
+    ok(`.${cls} ships`, rule.length > 0);
+    ok(`.${cls} is opaque`, /fill-opacity:\s*1\b/.test(rule),
+      rule.trim().replace(/\s+/g, ' ') || 'no rule');
+    /* The marker sits on Esri's tiles, which are the same in both themes, so
+       a marker that follows the theme gets worse in exactly one of them. */
+    ok(`.${cls} is coloured against the basemap, not the page`,
+      /var\(--map-(here|past|ring)\)/.test(rule) && !/var\(--(accent|bg|text)\b/.test(rule),
+      rule.trim().replace(/\s+/g, ' ') || 'no rule');
+    /* One tone cannot beat a background of its own luminance, and a track's
+       colormap supplies every luminance there is. Body and ring differ. */
+    const fill = /fill:\s*var\(--map-([a-z]+)\)/.exec(rule)?.[1];
+    const stroke = /stroke:\s*var\(--map-([a-z]+)\)/.exec(rule)?.[1];
+    ok(`.${cls} carries a ring that is not its body`,
+      Boolean(fill && stroke && fill !== stroke), `${stroke} ring on ${fill}`);
+  }
+}
+
 section('every figure can be exported');
 
 {

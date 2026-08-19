@@ -37,6 +37,22 @@ const CAPTION_H = 22;
 const BAR_W = 14;
 
 /**
+ * The endpoint markers, the same three values as `--map-*` in `tokens.css`.
+ *
+ * They are repeated here rather than themed because the rest of this file's
+ * palette is `PRINT` — the light one, used whatever the screen is set to —
+ * and these are not part of that argument at all: the tiles composited under
+ * them are the same tiles either way, so the marker that reads on screen is
+ * the marker that reads in the file. `test:contrast` asserts the two copies
+ * still say the same thing.
+ */
+const MARK = {
+  here: '#8f0b22',
+  past: '#243447',
+  ring: '#ffffff',
+} as const;
+
+/**
  * Compose the map into a PNG and hand it to the reader.
  *
  * Throws with something sayable if the tiles cannot be read, which is the one
@@ -136,12 +152,12 @@ export async function exportMap(
       ctx.arc(originX + p.x, originY + p.y, r, 0, Math.PI * 2);
       ctx.fillStyle = fill;
       ctx.fill();
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 2.5;
       ctx.strokeStyle = stroke;
       ctx.stroke();
     };
-    mark(ends.first, PRINT.bg, PRINT.text, 5);
-    mark(ends.last, PRINT.accent, PRINT.accent, 6);
+    mark(ends.first, MARK.ring, MARK.past, 5);
+    mark(ends.last, MARK.here, MARK.ring, 7);
   }
 
   if (options.legend) drawLegend(ctx, options.legend, originX, originY, w, h);
