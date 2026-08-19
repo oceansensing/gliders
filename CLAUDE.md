@@ -272,12 +272,17 @@ was given, which is what the decoder this engine came from does.
 
 ## A depth axis starts at the surface
 
-The profile panels open with their y range pinned to 0. Left to the data the
-axis began at whatever the shallowest sample happened to be — 0.103 m on one
-deployment — which is a fact about the sampling rather than about the ocean,
-and it started two profiles of the same water at different depths. Written
-into the range box rather than forced behind it, so the reader can see the
-limit, change it, and get it back with Reset.
+Every figure with depth on the y axis — the sections and both profile panels,
+on both pages — opens with its y range pinned to 0. Left to the data the axis
+began at whatever the shallowest sample happened to be, 0.103 m on one
+deployment, which is a fact about the sampling rather than about the ocean:
+two sections of the same mission could start at different depths, and so
+could two profiles of the same water.
+
+Written into the reader's own range box rather than forced behind it, so the
+limit can be seen, changed, and brought back with Reset. It costs nothing at
+the other end — a floor below every sample excludes none, because a limit
+here is a window onto the data rather than a rescale of it.
 
 ## The track figure is shared, not copied
 

@@ -275,6 +275,8 @@ export function startLocalPage(): void {
         x: 'time', y: depth, c: name,
         flipY: true, style: 'dots', dot: 2.5, height: 360, map: v.colormap,
         note: v.derived ? 'computed from TEOS-10' : undefined,
+        /* A section starts at the surface, as on the deployment pages. */
+        yBoxes: ['0', ''],
       });
       sectionFigures.set(name, figure);
       figure.update(source);

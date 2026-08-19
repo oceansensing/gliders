@@ -283,6 +283,10 @@ export function startDeploymentPage(): void {
         height: 360,
         map: v.colormap,
         note: v.derived ? 'computed here from TEOS-10' : undefined,
+        /* A section starts at the surface, like a profile: left to the data
+           the axis began at the shallowest sample, so two sections of the
+           same deployment could start at different depths. */
+        yBoxes: ['0', ''],
         /* Sweep across a feature to load it properly. The gesture is the one
            a reader already makes at a section, so it is the one that asks
            for more of it. */

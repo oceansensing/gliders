@@ -275,6 +275,30 @@ section('labels and scales');
     'which is why every use has to carry the prefix');
 }
 
+section('a seeded range box is a visible default');
+
+{
+  /* How every depth axis on the site starts at the surface: the limit is
+     written into the reader's own range box rather than forced behind it, so
+     it can be seen, changed, and brought back with Reset. `plot` itself just
+     honours the range it is given — this checks the honouring. */
+  const s = ramp(100);
+  const svg = fresh();
+  const r = plot(svg, s, { width: 400, height: 300, flipY: true, yRange: [0, null] });
+  const ticks = [...svg.querySelectorAll('text.tick')].map((t) => t.textContent);
+  check('the axis starts at the given floor', parseFloat(ticks[0]), 0);
+  ok('and still ends at the data', parseFloat(ticks[1]) >= 99, ticks[1]);
+  check('nothing is hidden by it', r.hidden, 0);
+
+  /* A floor below the data must not clip: it is a window onto the data, so
+     an axis starting at 0 where the shallowest sample is 0.1 shows both. */
+  const deep = { x: s.x, y: Float64Array.from(s.y, (v) => v + 0.5), n: 100 };
+  const svg2 = fresh();
+  const r2 = plot(svg2, deep, { width: 400, height: 300, flipY: true, yRange: [0, null] });
+  check('a floor below every sample excludes none', r2.hidden, 0);
+  check('and draws them all', r2.drawn, 100);
+}
+
 section('robust colour limits');
 
 {
