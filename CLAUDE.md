@@ -170,6 +170,11 @@ Each of these shipped, was found by running the thing, and now has a gate.
   the chip row and in the map's colour menu, with nothing to say one of them
   was the inside of an instrument. An exact column-name match now outranks a
   `standard_name` match, and a colliding label falls back to its column name.
+- **A gate that depends on a bundler's size heuristic fails for the wrong
+  reason.** Astro inlines a small stylesheet into the page and emits a larger
+  one as a file; adding the map's legend pushed the deployment page over that
+  threshold, and six `test:pages` checks that read only the HTML started
+  failing against CSS that was perfectly correct. They read both sources now.
 - **A `<select>` is as wide as its widest option.** The map's colour menu
   contains "Potential density anomaly σ₀ (kg/m³)", so uncapped it pushed the
   map's caption onto three lines — and because the map fills what the row

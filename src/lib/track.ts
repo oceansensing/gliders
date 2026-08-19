@@ -47,6 +47,17 @@ export interface TrackUpdate {
   n: number;
   /** Omit to colour by time. */
   colour?: TrackColour;
+  /** The scale, when colouring by time — `colour` carries its own. */
+  colormap?: string;
+  /**
+   * Explicit colour limits. Omit to take them from the data.
+   *
+   * A window on the colour axis rather than a rescale of what survives it:
+   * values outside are drawn at the end colours rather than dropped, because
+   * the track is where the glider went and a stretch of water outside the
+   * reader's chosen range is not a stretch the glider skipped.
+   */
+  range?: { lo: number; hi: number };
 }
 
 export interface Track {
@@ -54,6 +65,9 @@ export interface Track {
   update(next: TrackUpdate): void;
   /** The range the last draw coloured over, for a legend. */
   readonly range: { lo: number; hi: number } | null;
+  /** The range the data itself spans, whatever the draw was told to use —
+      what "Auto" goes back to, and what the placeholders show. */
+  readonly dataRange: { lo: number; hi: number } | null;
   /** The Leaflet map, for callers that want to add to it. */
   readonly map: L.Map;
   /** Fit the view to the whole track. */
@@ -81,6 +95,7 @@ export function makeTrack(element: HTMLElement, options: TrackOptions = {}): Tra
   const ends = L.layerGroup().addTo(map);
   let bounds: L.LatLngBounds | null = null;
   let range: { lo: number; hi: number } | null = null;
+  let dataRange: { lo: number; hi: number } | null = null;
 
   /* **Leaflet measures its container once, at construction.** This map is
      built while the page is still assembling — the figures around it have no
@@ -159,8 +174,8 @@ export function makeTrack(element: HTMLElement, options: TrackOptions = {}): Tra
 
     points.sort((p, q) => p.t - q.t);
 
-    /* The colour axis: the chosen variable's own range, or the mission's
-       span when colouring by time. */
+    /* The colour axis: what the reader asked for, or the data's own range —
+       the chosen variable's, or the mission's span when colouring by time. */
     let lo = Infinity;
     let hi = -Infinity;
     for (const p of points) {
@@ -169,11 +184,18 @@ export function makeTrack(element: HTMLElement, options: TrackOptions = {}): Tra
       if (p.v > hi) hi = p.v;
     }
     if (!Number.isFinite(lo) || !(hi > lo)) { lo = 0; hi = 1; }
+    dataRange = { lo, hi };
+
+    const asked = next.range;
+    if (asked && Number.isFinite(asked.lo) && Number.isFinite(asked.hi) && asked.hi > asked.lo) {
+      lo = asked.lo;
+      hi = asked.hi;
+    }
     range = { lo, hi };
 
     const want = Math.max(2, Math.min(options.segments ?? 240, points.length - 1));
     const stride = Math.max(1, Math.floor((points.length - 1) / want));
-    const cmap = colour?.colormap ?? options.map ?? 'cmo.thermal';
+    const cmap = colour?.colormap ?? next.colormap ?? options.map ?? 'cmo.thermal';
 
     const all: L.LatLngExpression[] = [];
     for (let i = 0; i + stride < points.length; i += stride) {
@@ -189,7 +211,8 @@ export function makeTrack(element: HTMLElement, options: TrackOptions = {}): Tra
          gap in the path. */
       const mid = [a.v, b.v].filter(Number.isFinite);
       const t = mid.length
-        ? ((mid.reduce((x, y) => x + y, 0) / mid.length) - lo) / (hi - lo)
+        ? Math.min(1, Math.max(0,
+            ((mid.reduce((x, y) => x + y, 0) / mid.length) - lo) / (hi - lo)))
         : NaN;
       L.polyline(seg, {
         color: Number.isFinite(t) ? sample(cmap, t) : undefined,
@@ -216,5 +239,9 @@ export function makeTrack(element: HTMLElement, options: TrackOptions = {}): Tra
     if (bounds && bounds.isValid()) map.fitBounds(bounds, { padding: [24, 24] });
   }
 
-  return { update, map, fit, get range() { return range; } };
+  return {
+    update, map, fit,
+    get range() { return range; },
+    get dataRange() { return dataRange; },
+  };
 }

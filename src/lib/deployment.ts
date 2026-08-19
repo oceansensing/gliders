@@ -16,6 +16,7 @@ import {
   datasetInfo, fetchData, datasetPageUrl, tabledapUrl, DEFAULT_BASE,
   type DatasetInfo, type Progress, type TableData,
 } from '@c4po/erddap';
+import { COLORMAPS, knownColormap, sample } from '@c4po/plot';
 import { makeFigure, type Figure, type Source } from './figure.ts';
 import { makeTrack, type Track } from './track.ts';
 import { isopycnalUnderlay } from './isopycnals.ts';
@@ -81,6 +82,11 @@ export function startDeploymentPage(): void {
   const qcBox = at<HTMLInputElement>('[data-qc]');
   const trackNote = at('[data-track-note]');
   const trackColour = at<HTMLSelectElement>('[data-track-colour]');
+  const trackMap = at<HTMLSelectElement>('[data-track-map]');
+  const trackRamp = at('[data-track-ramp]');
+  const trackLo = at<HTMLInputElement>('[data-track-lo]');
+  const trackHi = at<HTMLInputElement>('[data-track-hi]');
+  const trackAuto = at<HTMLButtonElement>('[data-track-auto]');
   const fromBox = at<HTMLInputElement>('[data-from]');
   const toBox = at<HTMLInputElement>('[data-to]');
   const applyBtn = at<HTMLButtonElement>('[data-apply]');
@@ -354,24 +360,74 @@ export function startDeploymentPage(): void {
     const time = src.columns.get(info.timeVar);
     if (!lat || !lon || !time) return;
 
+    fillTrackMaps();
     fillTrackColours();
     const name = trackColour.value;
     const v = name && name !== info.timeVar ? src.columns.get(name) : undefined;
     const meta = vars.find((x) => x.name === name);
 
+    /* The scale follows the variable until the reader picks one, then stays
+       put — the same rule the figures keep, and tracked by a flag rather
+       than by comparing against a default, so choosing viridis deliberately
+       is not mistaken for not having chosen. */
+    if (!trackMapTouched) {
+      trackMap.value = meta?.colormap ?? (name === info.timeVar ? 'cmo.thermal' : 'viridis');
+    }
+    paintTrackRamp();
+
+    const isTimeAxis = !v;
+    retypeRange(isTimeAxis);
+    const lo = readRange(trackLo, isTimeAxis);
+    const hi = readRange(trackHi, isTimeAxis);
+
     track.update({
       lon, lat, time, n: table.rows,
-      colour: v && meta
-        ? { values: v, colormap: meta.colormap, depth: src.columns.get(info.depthVar ?? 'depth') }
+      colour: v
+        ? { values: v, colormap: trackMap.value, depth: src.columns.get(info.depthVar ?? 'depth') }
         : undefined,
+      colormap: trackMap.value,
+      range: lo !== null && hi !== null ? { lo, hi } : undefined,
     });
 
+    /* The readout says what the colours actually span, and the placeholders
+       say what the data does — so a reader can see at a glance whether they
+       have narrowed it and what they narrowed it from. */
+    const auto = track.dataRange;
+    if (auto) {
+      trackLo.placeholder = isTimeAxis ? stampOf(auto.lo) : trim(auto.lo);
+      trackHi.placeholder = isTimeAxis ? stampOf(auto.hi) : trim(auto.hi);
+    }
     const range = track.range;
     if (!range) { trackNote.textContent = ''; return; }
-    trackNote.textContent = v && meta
+    const narrowed = auto && (range.lo !== auto.lo || range.hi !== auto.hi);
+    const text = v && meta
       ? `${trim(range.lo)} – ${trim(range.hi)}${meta.units ? ` ${meta.units}` : ''}`
       : `${date(range.lo)} → ${date(range.hi)}`;
+    trackNote.textContent = narrowed ? `${text} (set)` : text;
   }
+
+  /** A range box is a clock on a time axis and a number otherwise — an epoch
+      is not something anyone types. Switching wipes the value, because the
+      old one means nothing on the new axis. */
+  function retypeRange(isTime: boolean): void {
+    const want = isTime ? 'datetime-local' : 'number';
+    for (const box of [trackLo, trackHi]) {
+      if (box.type !== want) {
+        box.type = want;
+        box.value = '';
+      }
+    }
+  }
+
+  const readRange = (box: HTMLInputElement, isTime: boolean): number | null => {
+    const raw = box.value.trim();
+    if (!raw) return null;
+    const v = isTime ? Date.parse(`${raw}Z`) / 1000 : Number(raw);
+    return Number.isFinite(v) ? v : null;
+  };
+
+  const stampOf = (t: number): string =>
+    Number.isFinite(t) ? new Date(t * 1000).toISOString().slice(0, 16) : '';
 
   /** The colour menu, filled from what the deployment actually has. */
   function fillTrackColours(): void {
@@ -397,6 +453,38 @@ export function startDeploymentPage(): void {
   }
 
   let trackColourKey = '';
+  let trackMapTouched = false;
+
+  /** The scale menu, filled once — the list is fixed, not something the data
+      decides. */
+  let pendingTrackMap: string | null = null;
+
+  function fillTrackMaps(): void {
+    if (trackMap.options.length) return;
+    for (const cmap of Object.keys(COLORMAPS)) {
+      const opt = document.createElement('option');
+      opt.value = cmap;
+      opt.textContent = cmap;
+      trackMap.append(opt);
+    }
+    /* A link's choice, applied now that there is a menu to apply it to —
+       the same trap the colour variable fell into: assigning to an empty
+       select does nothing at all. */
+    if (pendingTrackMap) {
+      trackMap.value = pendingTrackMap;
+      pendingTrackMap = null;
+    }
+  }
+
+  function paintTrackRamp(): void {
+    const stops = 20;
+    trackRamp.replaceChildren();
+    for (let i = 0; i < stops; i++) {
+      const cell = document.createElement('span');
+      cell.style.background = sample(trackMap.value, (i + 0.5) / stops);
+      trackRamp.append(cell);
+    }
+  }
   /** A colour asked for by the link, until the menu exists to honour it. */
   let wantedTrack: string | null = null;
 
@@ -410,6 +498,32 @@ export function startDeploymentPage(): void {
   };
 
   trackColour.addEventListener('change', () => {
+    /* A new variable brings its own conventional scale back, unless the
+       reader has expressed a preference — and its own range always, because
+       limits set for temperature mean nothing on salinity. */
+    trackMapTouched = false;
+    trackLo.value = '';
+    trackHi.value = '';
+    paintTrack();
+    remember();
+  });
+
+  trackMap.addEventListener('change', () => {
+    trackMapTouched = true;
+    paintTrack();
+    remember();
+  });
+
+  for (const box of [trackLo, trackHi]) {
+    box.addEventListener('input', () => {
+      paintTrack();
+      remember();
+    });
+  }
+
+  trackAuto.addEventListener('click', () => {
+    trackLo.value = '';
+    trackHi.value = '';
     paintTrack();
     remember();
   });
@@ -621,6 +735,16 @@ export function startDeploymentPage(): void {
        dropped and the map fell back to time. `fillTrackColours` applies it
        once there is something to apply it to. */
     wantedTrack = params.get('track') ?? wantedTrack;
+    const wantedRange = params.get('trackrange');
+    if (wantedRange && !trackLo.value && !trackHi.value) {
+      const [a, b] = wantedRange.split(',');
+      if (a && b) { trackLo.value = a; trackHi.value = b; }
+    }
+    const wantedMap = params.get('trackmap');
+    if (wantedMap && knownColormap(wantedMap)) {
+      pendingTrackMap = wantedMap;
+      trackMapTouched = true;
+    }
     /* Only on the first load: after that `window_` is what the reader chose
        and the query string is following it, not leading. */
     if (!restored) {
@@ -645,6 +769,10 @@ export function startDeploymentPage(): void {
     } else {
       next.delete('track');
     }
+    if (trackMapTouched && trackMap.value) next.set('trackmap', trackMap.value);
+    else next.delete('trackmap');
+    if (trackLo.value && trackHi.value) next.set('trackrange', `${trackLo.value},${trackHi.value}`);
+    else next.delete('trackrange');
     if (window_) {
       next.set('t0', String(Math.round(window_.from)));
       next.set('t1', String(Math.round(window_.to)));

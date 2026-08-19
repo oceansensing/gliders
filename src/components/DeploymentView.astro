@@ -33,15 +33,42 @@ import PlotFigure from './PlotFigure.astro';
 
   <section class="pair">
     <figure class="map-figure">
+      <!--
+        Two rows, and that is a layout decision rather than a whim: the map
+        fills whatever height this caption leaves it, so anything that can
+        reflow here resizes the map under the reader. Both rows hold fixed
+        content — capped selects, a reserved range slot — so the height is
+        the same whatever is chosen.
+      -->
       <figcaption class="topline">
         <span class="eyebrow">Track</span>
-        <span class="track-colour">
-          <label class="eyebrow" for="track-colour">colour by</label>
-          <select class="field" id="track-colour" data-track-colour></select>
-          <span class="mono muted" data-track-note></span>
-        </span>
       </figcaption>
       <div class="map" data-map role="application" aria-label="Glider track"></div>
+      <!--
+        Under the map, where a legend belongs: the two menus decide what the
+        colours mean and the ramp and range say what they are, so they read
+        as one strip rather than as chrome above the picture.
+      -->
+      <div class="track-controls">
+        <div class="row">
+          <label class="eyebrow" for="track-colour">colour by</label>
+          <select class="field" id="track-colour" data-track-colour></select>
+        </div>
+        <div class="row">
+          <label class="eyebrow" for="track-map">scale</label>
+          <select class="field" id="track-map" data-track-map></select>
+          <span class="ramp" data-track-ramp aria-hidden="true"></span>
+        </div>
+        <div class="row">
+          <label class="eyebrow" for="track-lo">range</label>
+          <input class="field" type="number" step="any" id="track-lo" data-track-lo
+            aria-label="Colour range, lowest value" />
+          <input class="field" type="number" step="any" data-track-hi
+            aria-label="Colour range, highest value" />
+          <button class="btn" type="button" data-track-auto>Auto</button>
+          <span class="mono muted" data-track-note></span>
+        </div>
+      </div>
     </figure>
     <div class="ts">
       <PlotFigure id="ts" title="T–S diagram" hint="Waiting for data…" />
@@ -222,15 +249,36 @@ import PlotFigure from './PlotFigure.astro';
     flex-wrap: wrap;
   }
 
-  .track-colour {
+  /* Three rows, each one line: what the colours mean, what scale they use,
+     and what range they span. Fixed content per row, so the strip's height
+     does not change with the choices — the map fills what this leaves it,
+     and a reflow here would resize the map under the reader. */
+  .track-controls {
     display: flex;
-    align-items: baseline;
-    gap: var(--space-xs);
-    margin-inline-start: auto;
+    flex-direction: column;
+    gap: var(--space-2xs);
+    margin-block-start: var(--space-xs);
     min-width: 0;
   }
 
-  .track-colour .eyebrow {
+  /* **A fixed row height, because the range boxes change type.** On a time
+     axis they become `datetime-local`, which the browser renders about 2 px
+     taller than a `number` — and since the map fills what this strip leaves
+     it, switching the colour variable resized the map by that much. Small,
+     and the same class of twitch as the readout that started all this. */
+  .track-controls .row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    min-width: 0;
+    min-height: 2.15rem;
+  }
+
+  /* One column for the three labels, so the controls line up down the strip
+     rather than starting at three different places. */
+  .track-controls .row > .eyebrow:first-child {
+    flex: 0 0 auto;
+    min-width: 7ch;
     white-space: nowrap;
   }
 
@@ -241,9 +289,34 @@ import PlotFigure from './PlotFigure.astro';
    * give up the same 65 px, because the map fills what the row leaves it.
    * Capped, and the browser truncates the option text itself.
    */
-  .track-colour select {
-    max-width: 15rem;
+  .track-controls select {
     min-width: 0;
+  }
+
+  [data-track-colour] {
+    flex: 1 1 auto;
+    max-width: 15rem;
+  }
+
+  [data-track-map] {
+    flex: 0 1 auto;
+    max-width: 10rem;
+  }
+
+  [data-track-lo],
+  [data-track-hi] {
+    flex: 0 1 7rem;
+    min-width: 0;
+  }
+
+  .ramp {
+    display: flex;
+    flex: 0 0 auto;
+    height: 1.4rem;
+    width: 4rem;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    overflow: hidden;
   }
 
   /* The range changes length as the variable changes, so it is reserved:
@@ -324,6 +397,10 @@ import PlotFigure from './PlotFigure.astro';
     color: var(--accent-contrast);
     background: var(--accent);
     border-color: var(--accent);
+  }
+
+  [data-track-ramp] span {
+    flex: 1;
   }
 
   /* A small dot marking a property computed here rather than published. */

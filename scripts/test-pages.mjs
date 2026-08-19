@@ -25,6 +25,25 @@ if (!fs.existsSync(DIST)) {
 const read = (p) => fs.readFileSync(`${DIST}/${p}`, 'utf8');
 const parse = (p) => new JSDOM(read(p)).window.document;
 
+/**
+ * Every stylesheet the build emitted, plus every page's inline one.
+ *
+ * **Both, always.** Astro inlines a small stylesheet into the page and emits
+ * a larger one as a file, and which side of that threshold a component lands
+ * on changes as it grows — adding the map's legend moved this page's CSS out
+ * of the HTML and into `_astro/deployment.*.css`, and six checks that read
+ * only the HTML started failing against CSS that was perfectly correct. A
+ * gate that depends on a bundler's size heuristic is a gate that fails for
+ * the wrong reason.
+ */
+const ALL_CSS = [
+  ...fs.readdirSync(`${DIST}/_astro`).filter((f) => f.endsWith('.css'))
+    .map((f) => read(`_astro/${f}`)),
+  read('index.html'),
+  read('deployment/index.html'),
+  read('local/index.html'),
+].join('\n');
+
 section('the pages exist');
 
 for (const page of ['index.html', 'deployment/index.html', 'local/index.html']) {
@@ -117,16 +136,7 @@ section('the figures are styled after they are cloned');
      would render as black fills on black strokes.
      Read out of the built CSS because jsdom does no layout and cannot see
      it. */
-  /* Astro inlines a small stylesheet into the page rather than emitting a
-     file for it, so both places have to be read — a check that looked only
-     at `_astro/*.css` would pass on a build that shipped no rules at all. */
-  const css = [
-    ...fs.readdirSync(`${DIST}/_astro`).filter((f) => f.endsWith('.css'))
-      .map((f) => read(`_astro/${f}`)),
-    read('deployment/index.html'),
-    read('local/index.html'),
-    read('index.html'),
-  ].join('\n');
+  const css = ALL_CSS;
 
   ok('the trace rule is global and anchored on the figure',
     /\[data-figure\][^{]*\.trace\s*\{/.test(css), 'found in the built CSS');
@@ -207,6 +217,37 @@ section('the map’s colour control and the profile pair');
   const doc = parse('deployment/index.html');
   ok('the track has a colour-by control',
     doc.querySelector('[data-track-colour]') !== null);
+  ok('and a scale control with a ramp beside it',
+    doc.querySelector('[data-track-map]') !== null
+    && doc.querySelector('[data-track-ramp]') !== null);
+  ok('and colour-range limits with a way back to automatic',
+    doc.querySelector('[data-track-lo]') !== null
+    && doc.querySelector('[data-track-hi]') !== null
+    && doc.querySelector('[data-track-auto]') !== null);
+  /* Each legend row carries one visible label, which serves the first
+     control in it. The second range box has no visible label of its own, so
+     its `aria-label` is the only thing telling a screen reader which end of
+     the range it sets. */
+  ok('every legend control is named',
+    ['track-colour', 'track-map', 'track-lo']
+      .every((id) => doc.querySelector(`label[for="${id}"]`) !== null)
+    && (doc.querySelector('[data-track-hi]')?.getAttribute('aria-label') ?? '').length > 0);
+
+  /* The legend belongs under the picture it explains — and putting it there
+     also keeps it out of the caption, which the map's height is measured
+     against. */
+  const mapEl = doc.querySelector('[data-map]');
+  const legend = doc.querySelector('.track-controls');
+  /* The range boxes become `datetime-local` on a time axis, which the browser
+     renders ~2 px taller than a `number` — and the map fills what this strip
+     leaves it, so without a floor the map resized when the colour variable
+     changed. */
+  ok('the legend rows have a fixed height',
+    /\.track-controls[^{]*\.row[^{]*\{[^}]*min-height/.test(ALL_CSS));
+
+  ok('the legend sits below the map',
+    Boolean(mapEl && legend
+      && (mapEl.compareDocumentPosition(legend) & 4) !== 0));
   ok('with a label tied to it',
     doc.querySelector('label[for="track-colour"]') !== null
     && doc.querySelector('#track-colour') !== null);
@@ -224,12 +265,14 @@ section('the map’s colour control and the profile pair');
      expecting the two to be adjacent matches nothing. Minification also
      folds `flex: 1 1 auto` to `flex:auto`. Both caught by this gate failing
      against CSS that was in fact correct. */
-  const css = read('deployment/index.html');
+  const css = ALL_CSS;
   /* A select is as wide as its widest option, and the widest here is
      "Potential density anomaly σ₀ (kg/m³)". Uncapped it pushed the map's
      caption onto three lines and took 65 px out of the map below it. */
   ok('the colour select is width-capped',
-    /\.track-colour[^{]*select[^{]*\{[^}]*max-width/.test(css));
+    /\[data-track-colour\][^{]*\{[^}]*max-width/.test(css));
+  ok('and so is the scale select',
+    /\[data-track-map\][^{]*\{[^}]*max-width/.test(css));
   /* The range readout changes length with the variable, so its slot is
      reserved — otherwise picking one reflows the caption and the map
      resizes under the reader. */
