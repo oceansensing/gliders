@@ -295,7 +295,7 @@
   import { sample } from '@c4po/plot';
   import { withBase } from '../lib/url';
   import {
-    INDEX_PATH, cleanTrack, decodeTrack, mainRuns, shardPath, trackYear,
+    INDEX_PATH, cleanTrack, decodeTimes, decodeTrack, mainRuns, shardPath, trackYear,
     type TrackIndex, type TrackShard,
   } from '../lib/tracks';
 
@@ -650,7 +650,8 @@
             const d = byId.get(id);
             if (!d || baked.end !== Math.round(d.end)) continue;
             if (!tracks.has(id)) {
-              tracks.set(id, cleanTrack(decodeTrack(baked.p, shard.precision)));
+              tracks.set(id, cleanTrack(decodeTrack(baked.p, shard.precision),
+                decodeTimes(baked.t)));
             }
           }
         })

@@ -62,7 +62,24 @@ export interface BakedTrack {
   /** `[lat0, lon0, dlat, dlon, …]` as integers. Empty if the mission had no
       readable positions — kept so it is not asked for again. */
   p: number[];
+  /**
+   * When each fix was taken, as deltas in `TIME_UNIT` seconds.
+   *
+   * Carried because a third of the impossible steps in this archive are not
+   * fast, they are *old* — a glider carried somewhere and put back in, whose
+   * two ends are 50 km and 25 days apart. Without the clock that is
+   * indistinguishable from an afternoon's drifting.
+   *
+   * Quantised to ten minutes, which costs 0.30 MB across the archive against
+   * 1.02 MB at full precision, and is a 1.4% error on a six-hour step —
+   * nothing against a threshold of 2.5 m/s. Absent on shards baked before
+   * this existed, and everything degrades to the distance rule.
+   */
+  t?: number[];
 }
+
+/** The resolution baked timestamps are stored at. */
+export const TIME_UNIT = 600;
 
 /** What shards exist, written beside them so the client need not probe. */
 export interface TrackIndex {
@@ -123,41 +140,60 @@ export function encodeTrack(path: ReadonlyArray<readonly [number, number]>,
  * shore station's position, a leg recovered and redeployed somewhere else, or
  * a corrupt GPS record.
  *
- * **The rule is a distance between consecutive fixes, and the number is
- * 20 km.** A glider under its own power makes about 25 km in a day, so 20 km
- * between six-hourly fixes — 80 km/day — is something other than the vehicle
- * swimming. Measured across the whole baked archive, 510,831 steps:
+ * **A record fails in two different ways and they need two different tests.**
+ * Sorting every long step in the archive by its *implied speed* separates
+ * them cleanly. Steps whose fixes really are about six hours apart, so the
+ * distance is a speed:
  *
- * | | km in 6 h |
- * |---|---|
- * | median | 4.4 |
- * | 90th percentile | 7.8 |
- * | 99th | 17.4 |
- * | 99.9th | 35.6 |
- * | worst | 9,295 |
+ * | step | n | median m/s | physically impossible |
+ * |---|---|---|---|
+ * | 15–20 km | 3,873 | 0.80 | 0 |
+ * | 20–25 | 1,851 | 1.00 | 0 |
+ * | 25–30 | 718 | 1.14 | 0 |
+ * | 30–40 | 531 | 1.37 | 3 |
+ * | 40–50 | 137 | 1.94 | 3 |
+ * | **50–100** | 118 | **3.17** | 12 |
+ * | 100+ | 115 | 35.60 | 34 |
  *
- * 20 km sits just above the 99th percentile and takes out **3,471 steps,
- * 0.68%, across 449 missions**. Worth knowing which those are: the ones that
- * lose the most steps are Spray gliders and `silbo` on its Atlantic
- * crossings, which ride currents strong enough to carry a vehicle 20 km in
- * six hours for real. They come out as several runs rather than one, which is
- * the conservative direction to be wrong in — the map stops asserting a line
- * it cannot support, and no position is moved or hidden.
+ * **Nothing under 30 km in the entire archive is impossible**, and the first
+ * band whose median is impossible is 50–100 km. A glider swims at about
+ * 0.3 m/s and the strongest sustained current adds about 2, so the fastest
+ * real thing measured — the 99.99th percentile of 24,873 steps — is 1.82 m/s.
+ * Fifty kilometres in six hours is 2.31 m/s, which sits just above that and
+ * well below the artefacts. This is why the cut is not tighter: an earlier
+ * 20 km — 0.93 m/s — split 16.3% of missions, and what it was splitting was
+ * Spray gliders and `silbo` riding the Gulf Stream for real.
  *
- * A second rule applies wherever the times are known — the deployment page
- * draws fixes seconds apart, where 20 km would never trip at all: **3 m/s**,
- * set deliberately above the fastest sustained current in the ocean so that
- * what it removes is the impossible rather than the unusual.
+ * But a third of the long steps are not a speed at all. **2,523 of 7,343
+ * follow a gap of more than nine hours**, and that is the shape of a glider
+ * recovered, carried somewhere, and put back in with both ends filed under
+ * one id: the elapsed time is days, so the speed is unremarkable and only the
+ * gap gives it away. `ga_563-20151124T2147-delayed` moves 50 km over 25.6
+ * days. No distance cut catches that without also cutting the Gulf Stream.
  *
- * Both **break the line rather than bridge it**, which is what the plots do
- * with a gap and for the same reason. And a fix unreachable from *both*
+ * So, three rules:
+ *
+ * - **over 50 km in one step** — impossible whatever the clock says;
+ * - **over 2.5 m/s** — above the fastest current in the ocean;
+ * - **a gap over 24 hours with more than 15 km covered** — four missed
+ *   reports and the vehicle has moved: wherever it went, the straight line is
+ *   not a record of it.
+ *
+ * Together they break **717 steps, 0.140%, on 329 missions** — a fifth of
+ * what the 20 km cut broke, while catching 484 steps it missed entirely.
+ *
+ * All three **break the line rather than bridge it**, which is what the plots
+ * do with a gap and for the same reason. And a fix unreachable from *both*
  * neighbours while they are reachable from each other is dropped outright —
- * that is one wrong position, not a vehicle that went somewhere. Measured:
- * 17 of the 233 steps over 50 km are that shape, going out and coming
- * straight back.
+ * that is one wrong position, not a vehicle that went somewhere.
  */
-export const MAX_STEP_KM = 20;
-export const MAX_SPEED_MS = 3;
+export const MAX_STEP_KM = 50;
+export const MAX_SPEED_MS = 2.5;
+export const MAX_GAP_S = 24 * 3600;
+/** Below this, a long gap is not worth breaking for: the glider sat still,
+    and a straight line between two places 15 km apart is a fair sketch of
+    however it got between them. */
+export const GAP_STEP_KM = 15;
 
 /**
  * The runs that are the mission, rather than a handful of stray fixes.
@@ -197,8 +233,9 @@ export function reachable(a: readonly [number, number], b: readonly [number, num
   dtSeconds?: number): boolean {
   const km = stepKm(a, b);
   if (!(km <= MAX_STEP_KM)) return false;
-  if (dtSeconds !== undefined && dtSeconds > 0) return (km * 1000) / dtSeconds <= MAX_SPEED_MS;
-  return true;
+  if (dtSeconds === undefined || !(dtSeconds > 0)) return true;
+  if ((km * 1000) / dtSeconds > MAX_SPEED_MS) return false;
+  return !(dtSeconds > MAX_GAP_S && km > GAP_STEP_KM);
 }
 
 /**
@@ -284,6 +321,32 @@ export function decodeTrack(p: readonly number[],
     a += p[i];
     o += p[i + 1];
     out.push([a / e, o / e]);
+  }
+  return out;
+}
+
+/** Seconds since the epoch, as deltas in `TIME_UNIT`. Most of a mission's
+    steps are the same number, which is what makes the series compress. */
+export function encodeTimes(seconds: ArrayLike<number>, keep?: readonly number[]): number[] {
+  const out: number[] = [];
+  let prev = 0;
+  const n = keep ? keep.length : seconds.length;
+  for (let k = 0; k < n; k++) {
+    const s = seconds[keep ? keep[k] : k];
+    const u = Number.isFinite(s) ? Math.round(s / TIME_UNIT) : prev;
+    out.push(u - prev);
+    prev = u;
+  }
+  return out;
+}
+
+export function decodeTimes(t: readonly number[] | undefined): number[] | undefined {
+  if (!t || !t.length) return undefined;
+  const out: number[] = [];
+  let u = 0;
+  for (const d of t) {
+    u += d;
+    out.push(u * TIME_UNIT);
   }
   return out;
 }

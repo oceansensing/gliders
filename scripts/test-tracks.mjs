@@ -16,8 +16,8 @@ import fs from 'node:fs';
 import { check, done, near, ok, section } from './lib/check.mjs';
 import {
   INDEX_PATH, MAX_SPEED_MS, MAX_STEP_KM, TRACK_EVERY, TRACK_PRECISION,
-  cleanTrack, decodeTrack, encodeTrack, mainRuns, reachable, shardPath, stepKm, swimRuns,
-  trackYear,
+  TIME_UNIT, cleanTrack, decodeTimes, decodeTrack, encodeTimes, encodeTrack, mainRuns,
+  reachable, shardPath, stepKm, swimRuns, trackYear,
 } from '../src/lib/tracks.ts';
 
 section('the encoding');
@@ -60,8 +60,15 @@ section('how far a glider gets');
 
   ok('a normal six-hourly step is reachable', reachable([38, -74], [38.04, -74]),
     `${stepKm([38, -74], [38.04, -74]).toFixed(1)} km`);
-  ok(`and ${MAX_STEP_KM} km is not`, !reachable([38, -74], [38.3, -74]),
-    `${stepKm([38, -74], [38.3, -74]).toFixed(1)} km — 25 km/day is a glider, 130 is not`);
+  /* 30 km in six hours is 1.4 m/s. That is not a glider swimming, but it is a
+     glider in the Gulf Stream, and the whole archive contains no impossible
+     step below 30 km. The cut is above it deliberately. */
+  ok('a fast but real Gulf Stream step still is',
+    reachable([38, -74], [38.27, -74], 21600),
+    `${stepKm([38, -74], [38.27, -74]).toFixed(1)} km in 6 h`);
+  ok(`and ${MAX_STEP_KM} km in one step is not, whatever the clock says`,
+    !reachable([38, -74], [38.55, -74], 30 * 86400),
+    `${stepKm([38, -74], [38.55, -74]).toFixed(1)} km`);
 
   /* With the times known the bar is a speed, which catches a jump too short
      to trip the distance rule but far too fast for the minutes it took. */
@@ -69,6 +76,49 @@ section('how far a glider gets');
     !reachable([38, -74], [38.045, -74], 60),
     `${(stepKm([38, -74], [38.045, -74]) * 1000 / 60).toFixed(0)} m/s, over ${MAX_SPEED_MS}`);
   ok('the same 5 km over six hours is', reachable([38, -74], [38.045, -74], 21600));
+
+  /**
+   * The third rule, and the only one that catches a glider carried somewhere
+   * slowly. `ga_563-20151124T2147-delayed` moves 50 km over 25.6 days: an
+   * unremarkable speed, an impossible thing to have watched happen.
+   */
+  ok('a long gap with the vehicle moved is not a path',
+    !reachable([38, -74], [38.25, -74], 5 * 86400),
+    `${stepKm([38, -74], [38.25, -74]).toFixed(0)} km after 5 days`);
+  ok('but a long gap with the vehicle still is',
+    reachable([38, -74], [38.05, -74], 5 * 86400),
+    `${stepKm([38, -74], [38.05, -74]).toFixed(1)} km after 5 days — it sat there`);
+  ok('and the same distance inside a day is fine',
+    reachable([38, -74], [38.25, -74], 20 * 3600));
+}
+
+section('the clock');
+
+{
+  const secs = [1_700_000_000, 1_700_021_600, 1_700_043_200, 1_700_500_000];
+  const back = decodeTimes(encodeTimes(secs));
+  check('one entry per fix', back.length, secs.length);
+  for (let i = 0; i < secs.length; i++) {
+    ok(`fix ${i} lands within the quantisation`,
+      Math.abs(back[i] - secs[i]) <= TIME_UNIT / 2,
+      `${back[i]} vs ${secs[i]}, unit ${TIME_UNIT} s`);
+  }
+  /* The gaps are what the rules read, and they have to survive rounding well
+     enough to be compared against six hours and a day. */
+  const gap = back[1] - back[0];
+  ok('a six-hour gap survives as one', Math.abs(gap - 21600) <= TIME_UNIT,
+    `${(gap / 3600).toFixed(2)} h`);
+
+  check('a track with no clock decodes to nothing', decodeTimes(undefined), undefined);
+  check('and so does an empty one', decodeTimes([]), undefined);
+
+  /* Rows without a position are dropped from the path, so the clock has to be
+     dropped in the same places or every later fix is timed wrong. */
+  const kept = [0, 2, 3];
+  const aligned = decodeTimes(encodeTimes(secs, kept));
+  check('the clock follows the fixes that survived', aligned.length, 3);
+  ok('and stays aligned with them',
+    Math.abs(aligned[1] - secs[2]) <= TIME_UNIT / 2, `${aligned[1]} vs ${secs[2]}`);
 }
 
 section('a record split into what was swum');
@@ -194,6 +244,14 @@ section('the shards that ship');
         .map(([id]) => id);
       ok(`${file} keys every track on its last report`, undated.length === 0,
         undated.slice(0, 3).join(', ') || `${Object.keys(shard.tracks).length} tracks`);
+
+      /* And the clock, without which a glider carried somewhere over a week
+         is indistinguishable from one that drifted there. */
+      const clockless = Object.entries(shard.tracks)
+        .filter(([, b]) => b.p.length > 0 && (!b.t || b.t.length * 2 !== b.p.length))
+        .map(([id]) => id);
+      ok(`${file} carries a clock beside every path`, clockless.length === 0,
+        clockless.slice(0, 3).join(', ') || 'one entry per fix');
       for (const baked of Object.values(shard.tracks)) {
         const path = decodeTrack(baked.p, shard.precision);
         if (path.length < 2) continue;
@@ -202,7 +260,7 @@ section('the shards that ship');
         for (let i = 1; i < path.length; i++) {
           rawWorst = Math.max(rawWorst, stepKm(path[i - 1], path[i]));
         }
-        for (const run of cleanTrack(path)) {
+        for (const run of cleanTrack(path, decodeTimes(baked.t))) {
           runs++;
           for (let i = 1; i < run.length; i++) {
             const km = stepKm(run[i - 1], run[i]);

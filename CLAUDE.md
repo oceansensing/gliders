@@ -272,9 +272,9 @@ background map, so it is made once at build time and served from here.
 
 | | |
 |---|---|
-| a cold bake of the whole archive | 2,481 requests, **22 s** at six at a time |
-| what it produces | 513,311 fixes, **4.3 MB** raw |
-| what is actually served | **~1.4 MB** brotli, largest shard 162 KB |
+| a cold bake of the whole archive | 2,481 requests, **17 s** at six at a time |
+| what it produces | 513,311 fixes and their clock, **5.8 MB** raw |
+| what is actually served | **~1.8 MB** brotli, largest shard 196 KB |
 | the whole archive on screen | **1.4 s** from the click |
 
 **Split by the year the mission started**, which is the axis the reader
@@ -285,12 +285,14 @@ separate data repository. At 1.4 MB with only the current year churning, a
 second repo would buy a cross-origin fetch and a sync problem and nothing else.
 
 **Positions as deltas between fixed-point integers**, hundredths of a
-millidegree. A glider moves about 6 km between fixes, so the deltas are
-three-digit numbers where the positions are seven-digit ones, and that is the
-whole trick. Measured, projected to the archive: pairs at 4 dp 1.98 MB,
-delta-encoded **1.59 MB**, deltas at 1e-3 1.15 MB, deltas simplified to 555 m
-0.97 MB. The last two were not taken — a coarser grid and a dropped point are
-both a *different track* from the one the deployment page draws.
+millidegree, and the times as deltas in ten-minute units. A glider moves about
+6 km between fixes, so the deltas are three-digit numbers where the positions
+are seven-digit ones, and that is the whole trick. Measured, projected to the
+archive: pairs at 4 dp 1.98 MB, delta-encoded **1.51 MB**, deltas at 1e-3
+1.15 MB, deltas simplified to 555 m 0.97 MB. The last two were not taken — a
+coarser grid and a dropped point are both a *different track* from the one the
+deployment page draws. The clock adds 0.30 MB at ten-minute resolution against
+1.02 MB at full precision.
 
 **Archived only.** A glider still reporting grows a few fixes a day, so a
 baked path would show it stopped. Those are fetched live, every visit. A
@@ -309,35 +311,54 @@ A deployment's dataset is whatever was filed under that id, which can include
 a fix taken while the vehicle was on a ship, a shore station, a leg recovered
 and redeployed elsewhere, or a corrupt GPS record.
 
-**The rule is a distance between consecutive fixes, and the number is 20 km.**
-A glider under its own power makes about 25 km a day, so 20 km between
-six-hourly fixes — 80 km/day — is something other than the vehicle swimming.
-Across all 510,831 steps in the archive:
+**A record fails in two different ways and they need two different tests**,
+and sorting every long step by its implied speed separates them. Taking only
+the steps whose fixes really are about six hours apart, so the distance *is* a
+speed:
 
-| median | p90 | p99 | p99.9 | worst |
-|---|---|---|---|---|
-| 4.4 km | 7.8 | 17.4 | 35.6 | **9,295** |
+| step | n | median m/s | physically impossible |
+|---|---|---|---|
+| 15–20 km | 3,873 | 0.80 | 0 |
+| 20–25 | 1,851 | 1.00 | 0 |
+| 25–30 | 718 | 1.14 | 0 |
+| 30–40 | 531 | 1.37 | 3 |
+| 40–50 | 137 | 1.94 | 3 |
+| **50–100** | 118 | **3.17** | 12 |
+| 100+ | 115 | 35.60 | 34 |
 
-20 km sits just above the 99th percentile and takes 3,471 steps, 0.68%, across
-449 missions. **16.3% of missions come out in more than one run**; the ones
-that lose the most are Spray gliders and `silbo` on its Atlantic crossings,
-which ride currents strong enough to do 20 km in six hours for real. They are
-drawn as several runs instead of one, which is the conservative direction to
-be wrong in: no position is moved or hidden, the map simply stops asserting a
-line it cannot support. A second rule, **3 m/s**, applies wherever the times
-are known — the deployment page draws fixes seconds apart, where a distance
-rule would never trip.
+**Nothing under 30 km in the whole archive is impossible**, and the first band
+whose median is impossible is 50–100 km. A glider swims at ~0.3 m/s and the
+strongest sustained current adds ~2, so the fastest real thing measured — the
+99.99th percentile of 24,873 steps — is 1.82 m/s. Fifty kilometres in six
+hours is 2.31 m/s: just above that, well below the artefacts. An earlier
+20 km cut — 0.93 m/s — split 16.3% of missions, and what it was splitting was
+Spray gliders and `silbo` riding the Gulf Stream for real.
 
-Both **break the line rather than bridge it**, which is what the plots do with
-a gap and for the same reason. A fix unreachable from *both* neighbours while
-they are reachable from each other is dropped outright: that is one wrong
-position, not a vehicle that went somewhere. Of the 233 steps over 50 km, 17
-are that shape.
+But **a third of the long steps are not a speed at all**: 2,523 of 7,343
+follow a gap of over nine hours. That is the shape of a glider recovered,
+carried somewhere and put back in with both ends under one id — the elapsed
+time is days, so the speed is unremarkable and only the gap gives it away.
+`ga_563-20151124T2147-delayed` moves 50 km over 25.6 days. No distance cut
+catches that without also cutting the Gulf Stream.
+
+So three rules — over **50 km**, over **2.5 m/s**, or a gap over **24 hours**
+with more than 15 km covered. Together: **717 steps, 0.140%, on 329 missions**
+— a fifth of what 20 km broke, catching 484 steps it missed. 11.8% of missions
+come out in more than one run.
+
+All three **break the line rather than bridge it**, which is what the plots do
+with a gap and for the same reason. A fix unreachable from *both* neighbours
+while they are reachable from each other is dropped outright: that is one
+wrong position, not a vehicle that went somewhere.
+
+The gap rule is why the shards carry a clock. Quantised to ten minutes, which
+costs 0.30 MB across the archive against 1.02 MB at full precision and is a
+1.4% error on a six-hour step — nothing against a 2.5 m/s threshold.
 
 The end marker takes the end of the last *run*, not of the record — otherwise
 the one mark claiming to say where the glider is sits in an ocean it was never
 in. `test:tracks` re-derives the whole thing from the committed shards and
-asserts no drawn step exceeds the cap: the longest is 20.0 km against a raw
+asserts no drawn step exceeds the cap: the longest is 49.7 km against a raw
 worst of 9,295.
 
 **And a run holding under 2% of a mission's fixes does not set the view.**

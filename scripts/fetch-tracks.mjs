@@ -23,7 +23,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DEFAULT_BASE, listDatasets, parseJsonlCsvStream, request, tabledapUrl }
   from '../packages/erddap/index.ts';
-import { TRACK_EVERY, TRACK_PRECISION, encodeTrack, trackYear }
+import { TRACK_EVERY, TRACK_PRECISION, encodeTimes, encodeTrack, trackYear }
   from '../src/lib/tracks.ts';
 
 const OUT = fileURLToPath(new URL('../public/data/tracks/', import.meta.url));
@@ -76,7 +76,10 @@ for (const d of archived) {
 
 const todo = archived.filter((d) => {
   const have = shards.get(trackYear(d.start)).tracks[d.id];
-  return !have || have.end !== Math.round(d.end);
+  /* An entry with no clock is one baked before the clock existed. It is
+     re-fetched rather than left alone: a third of the steps this data is
+     filtered on are told apart by their elapsed time and nothing else. */
+  return !have || have.end !== Math.round(d.end) || (have.p.length > 0 && !have.t);
 });
 
 console.log(`${todo.length} to fetch, ${archived.length - todo.length} already baked`);
@@ -91,6 +94,7 @@ async function worker() {
     const d = todo[next++];
     if (!d) return;
     let p = [];
+    let t = [];
     try {
       const url = tabledapUrl(DEFAULT_BASE, d.id, 'jsonlCSV',
         ['time', 'latitude', 'longitude'], { every: TRACK_EVERY });
@@ -101,11 +105,19 @@ async function worker() {
       });
       const lat = columns.get('latitude');
       const lon = columns.get('longitude');
+      const secs = columns.get('time');
       const pairs = [];
+      /* The rows a position survived on, so the clock stays aligned with the
+         path after the ones without a fix are dropped. */
+      const kept = [];
       for (let i = 0; i < rows; i++) {
-        if (Number.isFinite(lat[i]) && Number.isFinite(lon[i])) pairs.push([lat[i], lon[i]]);
+        if (Number.isFinite(lat[i]) && Number.isFinite(lon[i])) {
+          pairs.push([lat[i], lon[i]]);
+          kept.push(i);
+        }
       }
       p = encodeTrack(pairs, TRACK_PRECISION);
+      t = encodeTimes(secs, kept);
     } catch (err) {
       /* A deployment whose positions cannot be read is recorded as empty
          rather than skipped, so the next bake does not ask again — and so the
@@ -114,7 +126,7 @@ async function worker() {
       failed++;
       void err;
     }
-    shards.get(trackYear(d.start)).tracks[d.id] = { end: Math.round(d.end), p };
+    shards.get(trackYear(d.start)).tracks[d.id] = { end: Math.round(d.end), p, t };
     if (++done % 200 === 0) {
       console.log(`  ${done}/${todo.length}  (${((Date.now() - t0) / 1000).toFixed(0)} s)`);
     }

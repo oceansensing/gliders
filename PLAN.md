@@ -24,9 +24,9 @@ gates the deploy and runs entirely offline.
   `public/data/tracks/` — one shard per start year, ~1.4 MB compressed for the
   lot — and loaded a year at a time; only what is still reporting is fetched
   from the DAC.
-- **Positions the glider could not have swum are not drawn.** 20 km between
-  consecutive fixes; the line breaks rather than crossing an ocean, and a
-  single bad fix is dropped.
+- **Positions the glider could not have swum are not drawn.** Over 50 km in a
+  step, over 2.5 m/s, or a gap over 24 hours with the vehicle moved: the line
+  breaks rather than crossing an ocean, and a single bad fix is dropped.
 - A dot at each glider's last known position, styled active vs archived, and
   shrunk when the archive is up so it does not bury the tracks.
 - Clicking a track or a dot opens that deployment.
@@ -74,7 +74,7 @@ gates the deploy and runs entirely offline.
 | Query-string state, no router | 2,534 datasets and more weekly. A view is a link. |
 | No framework | Vanilla TS in component scripts, matching oceansensing.github.io. The heaviest thing on the page is the data. |
 | Tests are plain Node scripts | Type stripping runs them against the sources; a runner needing its own transform would put a build between the code and its check. |
-| The baked tracks live in this repo, not a `glider-data` one | 4.3 MB raw, ~1.4 MB compressed, sharded by start year so only the current year is ever rewritten. A second repo would add a cross-origin fetch, a second deploy and a sync problem, and save nothing at that size. Revisit if the bake ever carries per-fix timestamps or full-rate paths. |
+| The baked tracks live in this repo, not a `glider-data` one | 5.8 MB raw, ~1.8 MB compressed, sharded by start year so only the current year is ever rewritten. A second repo would add a cross-origin fetch, a second deploy and a sync problem, and save nothing at that size. Revisit if the bake ever carries full-rate paths. |
 
 ---
 
@@ -93,16 +93,13 @@ Until it is scheduled, a mission that finished since the last bake is fetched
 live by each reader and cached in their `localStorage`, which is correct but
 is one request per reader.
 
-### The 20 km rule splits some legitimate tracks
+### The track colour is interpolated along the path, not read off the clock
 
-16.3% of missions come out in more than one run, and the ones that lose the
-most steps are Spray gliders and `silbo` on its Atlantic crossings — vehicles
-riding currents strong enough to cover 20 km in six hours for real. The rule
-is deliberately conservative and nothing is hidden or moved, but a
-time-aware version (the 3 m/s speed rule already applies where the times are
-known) would keep those whole if the six-hourly timestamps were baked too.
-Measured cost of baking them: the time deltas are almost all exactly 21600,
-so they compress to very little.
+Now that the shards carry timestamps, `drawTracks` could colour each stretch
+by when it actually happened instead of by how far along the fix index it
+sits. It matters only where a mission has gaps, and across the whole archive
+each mission is one colour anyway, so it is a small correctness win rather
+than a visible one. It needs `cleanTrack` to hand back times alongside runs.
 
 ### The profile explorer lost its full-rate button
 
