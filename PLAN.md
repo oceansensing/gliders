@@ -142,8 +142,65 @@ per-page one.
   over HTTPS; HTTP is simply not redirected.
 - `actions/checkout` and `actions/setup-node` are pinned to Node 20 SHAs and
   GitHub force-runs them on 24. Harmless, but the pins want bumping.
-- Only the IOOS DAC is tested. The ERDDAP client takes a base URL, so OTN,
-  VOTO and BODC are a config change plus whatever their schemas differ in.
+
+---
+
+## Other glider data providers: spiked, and blocked
+
+Asked for on 2026-08-19 — NOC, OTN, VOTO alongside IOOS — and **not built,
+because a browser cannot read any of them.** The whole site rests on the DAC
+sending `Access-Control-Allow-Origin: *`; nobody else does. Measured by
+`fetch()` from a real page, which is the only test that counts:
+
+| provider | endpoint | readable in a browser |
+|---|---|---|
+| **IOOS Glider DAC** | `gliders.ioos.us/erddap` | **yes** — `ACAO: *` |
+| VOTO | `erddap.observations.voiceoftheocean.org` | no — 403, no header |
+| OTN | `members.oceantrack.org/erddap` | no — 403, no header |
+| NOC | `linkedsystems.uk/erddap` | no — 200 to `curl`, no header |
+| BODC | `erddap.bodc.ac.uk/erddap` | no — 200 to `curl`, no header |
+| C-PROOF | `cproof.uvic.ca/erddap` | no |
+| Ifremer, SOCIB, OOI, CoastWatch | — | no |
+
+**The near miss worth knowing about.** EMODnet Physics
+(`erddap.emodnet-physics.eu/erddap`) *does* send `ACAO: *`, and its catalog
+holds **323 VOTO glider datasets** — `delayed_SEA068_M27` and friends, the
+SeaExplorer missions, with a full schema. It looks like the answer for a
+morning. It is not: EMODnet indexes those datasets rather than mirroring them,
+so a `tabledap` request answers **302** and redirects to VOTO's own server,
+which answers 403 with no CORS header. The catalog is reachable and not one
+byte of the data is. Rutgers RUCOOL also sends CORS, but its gliders are in
+the DAC already.
+
+**What is already covered.** Of the DAC's 125 institutions, C-PROOF has 101
+deployments, and OTN and VOTO one each — so the Canadian and a token European
+presence arrive through IOOS regardless.
+
+**What would unblock it**, in order of how much they cost someone else:
+
+1. Ask the providers to set `<acceptRequestsFromAllRemoteHosts>` — a one-line
+   ERDDAP config change, and the only fix that keeps this a static site.
+2. Encourage submission to the IOOS DAC, which is what C-PROOF already does.
+3. Bake their catalogs and tracks at build time. Node has no same-origin
+   policy, so `scripts/fetch-tracks.mjs` could fetch them today and the map
+   would go global. The deployment page could not follow: profiles are
+   megabytes per mission and cannot be baked, so every non-IOOS mission would
+   be a track you cannot open. Half a feature, and the confusing half.
+4. A proxy. It ends "static site, no backend", which is decision one.
+
+**If it is ever built, VOTO's schema is not the DAC's** and two of the
+differences are the silent kind this codebase already has scar tissue for:
+conductivity is **mS cm⁻¹**, a factor of ten from the S/m TEOS-10 wants, and
+their `density` variable carries `standard_name: sea_water_practical_salinity`
+— exactly the mislabelling that put the PAR sensor's internal temperature on
+the temperature axis. Pressure is dbar and temperature Celsius, which are
+right. QC is `<var>_qc` rather than QARTOD's naming.
+
+**And attribution would need building, not tuning.** Today the DAC is credited
+in the footer, in the hero, on the deployment header and in `config.ts`, and
+each deployment names its operating institution — which is enough while there
+is one source and would not be once there are four. Per-row provenance and a
+per-figure credit are part of the work, not a finish on it.
 
 ---
 
