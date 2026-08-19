@@ -22,3 +22,5 @@ export {
 } from './colormaps.ts';
 
 export { svgToPng, standalone, save } from './png.ts';
+
+export { robustRange, ROBUST_LOW, ROBUST_HIGH } from './robust.ts';

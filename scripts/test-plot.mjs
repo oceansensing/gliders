@@ -14,9 +14,10 @@
 
 import fs from 'node:fs';
 import { JSDOM } from 'jsdom';
-import { check, done, ok, section } from './lib/check.mjs';
+import { check, done, near, ok, section } from './lib/check.mjs';
 import { plot, DEFAULT_MAX_POINTS, tick, stamp } from '../packages/plot/plot.ts';
 import { sample, COLORMAPS, knownColormap } from '../packages/plot/colormaps.ts';
+import { robustRange, ROBUST_LOW, ROBUST_HIGH } from '../packages/plot/robust.ts';
 
 const dom = new JSDOM('<!doctype html><svg id="p"></svg>');
 const { document } = dom.window;
@@ -257,6 +258,56 @@ section('labels and scales');
   ok('a bare cmocean name is NOT a known map',
     knownColormap('thermal') === null,
     'which is why every use has to carry the prefix');
+}
+
+section('robust colour limits');
+
+{
+  /* A colour bar has a couple of dozen entries, and stretching it to reach
+     one outlier spends nearly all of them on water that is not there. The
+     axes keep their true bounds; only the colour scale is percentile-based. */
+  const clean = Float64Array.from({ length: 1000 }, (_, i) => i / 999);
+  const r = robustRange(clean, clean.length);
+  near('the low end is the 2nd percentile', r[0], 0.02, 0.005);
+  near('and the high end the 98th', r[1], 0.98, 0.005);
+
+  /* The case it exists for: a real chlorophyll record, where a handful of
+     dark-count readings sit below zero and one spike is ten times the
+     bloom. Percentiles must ignore both ends. */
+  const spiky = Float64Array.from({ length: 1000 }, (_, i) => {
+    if (i < 5) return -0.08;
+    if (i > 994) return 85;
+    return 1 + (i % 50) / 50;
+  });
+  const s2 = robustRange(spiky, spiky.length);
+  ok('an outlier low does not set the floor', s2[0] > -0.08, String(s2[0]));
+  ok('and an outlier high does not set the ceiling', s2[1] < 85, String(s2[1]));
+
+  /* A flat field would give a zero-width scale, which paints everything one
+     colour; it gets its true range back instead. */
+  const flat = Float64Array.from({ length: 100 }, (_, i) => (i === 0 ? 0 : 1));
+  const s3 = robustRange(flat, flat.length);
+  ok('a nearly-flat field falls back to its full range',
+    s3 !== null && s3[0] < s3[1], JSON.stringify(s3));
+
+  check('a constant field has no range at all',
+    robustRange(Float64Array.from({ length: 50 }, () => 7), 50), null);
+  check('nor does an empty one', robustRange(new Float64Array(0), 0), null);
+
+  /* NaNs are skipped, not counted as zero — the failure that would drag
+     every scale toward the origin. */
+  const gappy = Float64Array.from({ length: 1000 }, (_, i) => (i % 2 ? NaN : 10 + i / 1000));
+  const s4 = robustRange(gappy, gappy.length);
+  ok('gaps are skipped rather than read as zero', s4[0] > 9, String(s4[0]));
+
+  /* Sampled rather than fully sorted, and deterministically so: the same
+     data must give the same colour bar every redraw. */
+  const big = Float64Array.from({ length: 500000 }, (_, i) => (i * 7919) % 1000);
+  const a = robustRange(big, big.length);
+  const b = robustRange(big, big.length);
+  ok('the same data gives the same limits twice',
+    a[0] === b[0] && a[1] === b[1], `${a} vs ${b}`);
+  check('the percentiles are the documented ones', `${ROBUST_LOW}-${ROBUST_HIGH}`, '2-98');
 }
 
 section('every colormap this site names actually exists');

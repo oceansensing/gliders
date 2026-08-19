@@ -180,6 +180,30 @@ section('no two variables share a name on screen');
     shorts.map((v) => v.short).join(', ') || 'all within 12 characters');
 }
 
+section('physical floors on the colour scale');
+
+{
+  /* A percentile alone cannot fix a negative concentration: an optical
+     sensor's dark counts put real readings below zero, so the 2nd percentile
+     of a chlorophyll record is still about −0.03 µg/L. The floor clamps the
+     automatic colour limit without touching a single sample. */
+  const info = parseInfo('electa-20260807T1633',
+    JSON.parse(fs.readFileSync('scripts/fixtures/erddap/info-electa.json', 'utf8')));
+  const vars = plottable(info.variables);
+  const floor = (name) => vars.find((v) => v.name === name)?.floor;
+
+  for (const name of ['chlorophyll_a', 'cdom', 'beta_700nm', 'salinity', 'density',
+    'conductivity', 'pressure', 'depth', 'sa', 'rho', 'soundSpeed']) {
+    check(`${name} cannot go below zero`, floor(name), 0);
+  }
+
+  /* Absent where the quantity really is signed — a floor there would be a
+     lie about the ocean, not a defence against a sensor. */
+  for (const name of ['temperature', 'ct', 'pt', 'spice0', 'u', 'v']) {
+    check(`${name} has no floor`, floor(name), undefined);
+  }
+}
+
 section('raw Slocum files, end to end');
 
 {

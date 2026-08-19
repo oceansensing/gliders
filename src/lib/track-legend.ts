@@ -107,6 +107,7 @@ export function makeTrackLegend(
         ? {
             values,
             colormap: scale.value,
+            floor: meta?.floor,
             depth: axes.depthVar ? src.columns.get(axes.depthVar) : undefined,
           }
         : undefined,

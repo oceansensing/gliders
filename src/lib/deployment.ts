@@ -429,6 +429,12 @@ export function startDeploymentPage(): void {
         x: 'temperature', y: info.depthVar ?? 'depth',
         c: info.timeVar, flipY: true, style: 'dots', dot: 2.5, height: 420,
         map: 'cmo.thermal',
+        /* A profile starts at the surface. Left to the data the axis began
+           at whatever the shallowest sample happened to be — 0.103 m on one
+           deployment — which is a fact about the sampling, not about the
+           ocean, and it made two profiles of the same water start at
+           different depths. */
+        yBoxes: ['0', ''],
       });
     }
     const profileNode2 = document.querySelector<HTMLElement>('[data-figure="profile2"]');
@@ -437,6 +443,7 @@ export function startDeploymentPage(): void {
         x: 'salinity', y: info.depthVar ?? 'depth',
         c: info.timeVar, flipY: true, style: 'dots', dot: 2.5, height: 420,
         map: 'cmo.haline',
+        yBoxes: ['0', ''],
       });
     }
     const mapNode = document.querySelector<HTMLElement>('[data-map]');

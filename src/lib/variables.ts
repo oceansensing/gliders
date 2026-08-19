@@ -26,36 +26,38 @@ interface Display {
   colormap: string;
   /** Sort key: lower comes first in the chip row. */
   rank: number;
+  /** A value this quantity physically cannot go below. See `Plottable`. */
+  floor?: number;
 }
 
 /** Matched on the column name first, then on `standard_name`. */
 const BY_NAME: Record<string, Display> = {
   temperature: { label: 'Temperature', short: 'T', colormap: 'cmo.thermal', rank: 10 },
-  salinity: { label: 'Practical salinity', short: 'SP', colormap: 'cmo.haline', rank: 20 },
-  conductivity: { label: 'Conductivity', short: 'C', colormap: 'cmo.haline', rank: 60 },
-  density: { label: 'Density (from the DAC)', short: 'ρ', colormap: 'cmo.dense', rank: 61 },
-  pressure: { label: 'Pressure', short: 'p', colormap: 'cmo.deep', rank: 970 },
-  depth: { label: 'Depth', short: 'depth', colormap: 'cmo.deep', rank: 960 },
+  salinity: { label: 'Practical salinity', short: 'SP', colormap: 'cmo.haline', rank: 20, floor: 0 },
+  conductivity: { label: 'Conductivity', short: 'C', colormap: 'cmo.haline', rank: 60, floor: 0 },
+  density: { label: 'Density (from the DAC)', short: 'ρ', colormap: 'cmo.dense', rank: 61, floor: 0 },
+  pressure: { label: 'Pressure', short: 'p', colormap: 'cmo.deep', rank: 970, floor: 0 },
+  depth: { label: 'Depth', short: 'depth', colormap: 'cmo.deep', rank: 960, floor: 0 },
   time: { label: 'Time', short: 'time', colormap: 'cmo.thermal', rank: 951 },
   latitude: { label: 'Latitude', short: 'lat', colormap: 'cmo.balance', rank: 980 },
   longitude: { label: 'Longitude', short: 'lon', colormap: 'cmo.balance', rank: 981 },
   potential_temperature: { label: 'Potential temperature (DAC)', colormap: 'cmo.thermal', rank: 62 },
-  sound_speed: { label: 'Sound speed (from the DAC)', colormap: 'cmo.speed', rank: 63 },
-  chlorophyll_a: { label: 'Chlorophyll a', short: 'chl', colormap: 'cmo.algae', rank: 30 },
-  cdom: { label: 'CDOM', colormap: 'cmo.matter', rank: 32 },
-  beta_700nm: { label: 'Backscatter, 700 nm', colormap: 'cmo.turbid', rank: 33 },
-  bsipar_par: { label: 'PAR', colormap: 'plasma', rank: 34 },
-  oxygen_concentration: { label: 'Dissolved oxygen', short: 'O₂', colormap: 'cmo.deep', rank: 25 },
-  oxygen_saturation: { label: 'Oxygen saturation', colormap: 'cmo.deep', rank: 26 },
+  sound_speed: { label: 'Sound speed (from the DAC)', colormap: 'cmo.speed', rank: 63, floor: 0 },
+  chlorophyll_a: { label: 'Chlorophyll a', short: 'chl', colormap: 'cmo.algae', rank: 30, floor: 0 },
+  cdom: { label: 'CDOM', colormap: 'cmo.matter', rank: 32, floor: 0 },
+  beta_700nm: { label: 'Backscatter, 700 nm', colormap: 'cmo.turbid', rank: 33, floor: 0 },
+  bsipar_par: { label: 'PAR', colormap: 'plasma', rank: 34, floor: 0 },
+  oxygen_concentration: { label: 'Dissolved oxygen', short: 'O₂', colormap: 'cmo.deep', rank: 25, floor: 0 },
+  oxygen_saturation: { label: 'Oxygen saturation', colormap: 'cmo.deep', rank: 26, floor: 0 },
   u: { label: 'Eastward current (depth-averaged)', colormap: 'cmo.balance', rank: 80 },
   v: { label: 'Northward current (depth-averaged)', colormap: 'cmo.balance', rank: 81 },
 };
 
 const BY_STANDARD: Record<string, Display> = {
   sea_water_temperature: { label: 'Temperature', short: 'T', colormap: 'cmo.thermal', rank: 10 },
-  sea_water_practical_salinity: { label: 'Practical salinity', short: 'SP', colormap: 'cmo.haline', rank: 20 },
-  sea_water_electrical_conductivity: { label: 'Conductivity', short: 'C', colormap: 'cmo.haline', rank: 60 },
-  sea_water_density: { label: 'Density (from the DAC)', short: 'ρ', colormap: 'cmo.dense', rank: 61 },
+  sea_water_practical_salinity: { label: 'Practical salinity', short: 'SP', colormap: 'cmo.haline', rank: 20, floor: 0 },
+  sea_water_electrical_conductivity: { label: 'Conductivity', short: 'C', colormap: 'cmo.haline', rank: 60, floor: 0 },
+  sea_water_density: { label: 'Density (from the DAC)', short: 'ρ', colormap: 'cmo.dense', rank: 61, floor: 0 },
   sea_water_pressure: { label: 'Pressure', short: 'p', colormap: 'cmo.deep', rank: 70 },
   moles_of_oxygen_per_unit_mass_in_sea_water: { label: 'Dissolved oxygen', colormap: 'cmo.deep', rank: 25 },
   mass_concentration_of_oxygen_in_sea_water: { label: 'Dissolved oxygen', colormap: 'cmo.deep', rank: 25 },
@@ -97,6 +99,21 @@ export interface Plottable {
   derived: boolean;
   /** For derived variables, the sentence explaining what it is. */
   note?: string;
+  /**
+   * A value the quantity physically cannot go below, where one exists.
+   *
+   * Used only to clamp an automatic *colour* limit — never to hide or alter
+   * a sample. An optical sensor's dark counts put a few readings below zero,
+   * so a chlorophyll colour bar computed from the data alone starts at
+   * −0.03 µg/L: a negative concentration, spending part of the ramp on water
+   * that cannot exist. The floor stops that without touching the numbers,
+   * which stay exactly as the DAC published them and are still drawn.
+   *
+   * Absent where the quantity really can be negative: temperature reaches
+   * −2 °C, spiciness and the current components are signed by construction.
+   */
+  floor?: number;
+
   /**
    * Whether this belongs in the chip row, as a variable to draw a section
    * of. Time, depth, pressure and position are `false`: they are the *axes*
@@ -168,6 +185,7 @@ export function plottable(variables: readonly VariableInfo[]): Plottable[] {
       units: normaliseUnits(v.units),
       colormap: colormapFor(v.name, v.standardName),
       rank: hit?.rank ?? (axis ? 950 : engineering ? 900 : 500),
+      floor: hit?.floor ?? floorFor(v.name, v.standardName),
       derived: false,
       section: !axis,
     });
@@ -181,6 +199,7 @@ export function plottable(variables: readonly VariableInfo[]): Plottable[] {
       units: d.units,
       colormap: d.colormap,
       rank: DERIVED_RANK[d.name] ?? 50,
+      floor: DERIVED_FLOOR[d.name],
       derived: true,
       note: d.note,
       section: true,
@@ -222,6 +241,30 @@ function disambiguate(out: Plottable[], known: Set<string>): void {
       v.short = v.label.length <= 12 ? v.label : `${v.label.slice(0, 11)}…`;
     }
   }
+}
+
+/**
+ * Physical floors for the computed properties.
+ *
+ * Absolute Salinity and the densities cannot be negative; Conservative and
+ * potential temperature can, and spiciness is signed by construction, so
+ * they are absent rather than floored at a value that would be wrong.
+ */
+const DERIVED_FLOOR: Record<string, number> = {
+  sa: 0,
+  rho: 0,
+  soundSpeed: 0,
+};
+
+/** A floor for the many sensor channels no table can enumerate. Counts,
+    concentrations and intensities cannot be negative whatever they are
+    called. */
+function floorFor(name: string, standard?: string): number | undefined {
+  const hay = `${name} ${standard ?? ''}`;
+  if (/chlor|cdom|fdom|fluor|backscatter|\bbb\d|beta|turbid|scatter|\bpar\b|irradiance|oxygen|salin|conduct|density|pressure|depth/i.test(hay)) {
+    return 0;
+  }
+  return undefined;
 }
 
 /** Interleaved with the native fields rather than grouped after them: a

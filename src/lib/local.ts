@@ -247,16 +247,18 @@ export function toSource(
 export function variablesForTable(
   columns: readonly { name: string; unit: string; source: string }[],
 ): Plottable[] {
-  const KNOWN: Record<string, { label: string; short?: string; map: string; rank: number }> = {
-    depth: { label: 'Depth', short: 'depth', map: 'cmo.deep', rank: 960 },
+  const KNOWN: Record<string, {
+    label: string; short?: string; map: string; rank: number; floor?: number;
+  }> = {
+    depth: { label: 'Depth', short: 'depth', map: 'cmo.deep', rank: 960, floor: 0 },
     temperature_conservative: { label: 'Conservative Temperature', short: 'CT', map: 'cmo.thermal', rank: 11 },
-    salinity_absolute: { label: 'Absolute Salinity', short: 'SA', map: 'cmo.haline', rank: 21 },
-    salinity_reference: { label: 'Reference Salinity', short: 'SR', map: 'cmo.haline', rank: 21 },
-    salinity_practical: { label: 'Practical salinity', short: 'SP', map: 'cmo.haline', rank: 22 },
+    salinity_absolute: { label: 'Absolute Salinity', short: 'SA', map: 'cmo.haline', rank: 21, floor: 0 },
+    salinity_reference: { label: 'Reference Salinity', short: 'SR', map: 'cmo.haline', rank: 21, floor: 0 },
+    salinity_practical: { label: 'Practical salinity', short: 'SP', map: 'cmo.haline', rank: 22, floor: 0 },
     sigma0: { label: 'Potential density anomaly σ₀', short: 'σ₀', map: 'cmo.dense', rank: 40 },
-    density: { label: 'In-situ density', short: 'ρ', map: 'cmo.dense', rank: 41 },
+    density: { label: 'In-situ density', short: 'ρ', map: 'cmo.dense', rank: 41, floor: 0 },
     spice0: { label: 'Spiciness π₀', short: 'π₀', map: 'cmo.balance', rank: 42 },
-    sound_speed: { label: 'Sound speed', short: 'c', map: 'cmo.speed', rank: 43 },
+    sound_speed: { label: 'Sound speed', short: 'c', map: 'cmo.speed', rank: 43, floor: 0 },
     sci_water_temp: { label: 'Temperature', short: 'T', map: 'cmo.thermal', rank: 10 },
     sci_rbrctd_temperature_00: { label: 'Temperature (RBR)', map: 'cmo.thermal', rank: 10 },
     sci_water_cond: { label: 'Conductivity', short: 'C', map: 'cmo.haline', rank: 60 },
@@ -286,6 +288,7 @@ export function variablesForTable(
       units: prettyUnit(c.unit),
       colormap: known?.map ?? 'viridis',
       rank: known?.rank ?? (c.source === 'derived' ? 100 : 500),
+      floor: known?.floor,
       derived: c.source === 'derived',
       section: !AXIS.has(c.name),
     });

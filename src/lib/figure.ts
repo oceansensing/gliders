@@ -12,7 +12,8 @@
  */
 
 import {
-  plot, standalone, save, svgToPng, COLORMAPS, DEFAULT_COLORMAP, sample,
+  plot, standalone, save, svgToPng, robustRange, COLORMAPS, DEFAULT_COLORMAP,
+  ROBUST_HIGH, ROBUST_LOW, sample,
   type PlotOptions, type PlotResult, type PlotStyle, type Series,
 } from '@c4po/plot';
 import { axisLabel, type Plottable } from './variables.ts';
@@ -40,6 +41,16 @@ export interface Preset {
   underlay?: PlotOptions['underlay'];
   /** Extra sentence appended to the caption. */
   note?: string;
+  /**
+   * Limits to open the y range boxes with, as text.
+   *
+   * Written into the boxes rather than forced behind them, so the reader can
+   * see the limit, change it, and get it back with Reset. `['0', '']` is
+   * what every depth axis uses: a profile starts at the surface, and an
+   * axis that starts at 0.103 m because that is the shallowest sample is
+   * answering a question about the sampling rather than about the ocean.
+   */
+  yBoxes?: [string, string];
   /**
    * Called when the reader drags across the figure horizontally, with the
    * span they covered in data units. Only offered while the x axis is time,
@@ -111,6 +122,10 @@ export function makeFigure(root: HTMLElement, preset: Preset): Figure {
   flipBtn.setAttribute('aria-pressed', String(flip));
   if (preset.height) heightBox.value = String(preset.height);
   if (preset.dot) dotBox.value = String(preset.dot);
+  if (preset.yBoxes) {
+    box.yLo.value = preset.yBoxes[0];
+    box.yHi.value = preset.yBoxes[1];
+  }
 
   function fillAxes(): void {
     if (!source) return;
@@ -206,7 +221,7 @@ export function makeFigure(root: HTMLElement, preset: Preset): Figure {
       map: mapSel.value,
       xRange: [limit(box.xLo, xTime), limit(box.xHi, xTime)],
       yRange: [limit(box.yLo, yTime), limit(box.yHi, yTime)],
-      cRange: [limit(box.cLo, cTime), limit(box.cHi, cTime)],
+      cRange: colourLimits(c, cTime),
       xLabel: labelFor(xName),
       yLabel: labelFor(yName),
       cLabel: c ? labelFor(cName) : undefined,
@@ -217,6 +232,43 @@ export function makeFigure(root: HTMLElement, preset: Preset): Figure {
     last = plot(svg, series, options);
     lastFrame = last.frame;
     say();
+  }
+
+  /**
+   * The colour axis's limits: the reader's, or percentiles of the data.
+   *
+   * Not the true minimum and maximum, which is what the engine would use.
+   * A colour bar has a couple of dozen entries and stretching it to reach
+   * one bad sample spends nearly all of them on water that is not there —
+   * measured on a real chlorophyll record whose minimum is a negative
+   * concentration. See `packages/plot/robust.ts`.
+   *
+   * **A time axis keeps its true span.** The 2nd percentile of a mission's
+   * clock is not a defensible start date; it is just the mission minus its
+   * first few hours, and a reader comparing the colour bar with the section's
+   * own time axis would find them disagreeing for no stated reason.
+   */
+  let robust: [number, number] | null = null;
+  function colourLimits(
+    values: Float64Array | undefined, isTime: boolean,
+  ): [number | null, number | null] {
+    const asked: [number | null, number | null] = [
+      limit(box.cLo, isTime), limit(box.cHi, isTime),
+    ];
+    robust = null;
+    if (!values || isTime || !source) return asked;
+    if (asked[0] !== null && asked[1] !== null) return asked;
+    robust = robustRange(values, source.rows);
+    if (!robust) return asked;
+    /* Clamped to what the quantity can physically be. An optical sensor's
+       dark counts put a few chlorophyll readings below zero, so percentiles
+       alone still started that colour bar at −0.03 µg/L — a negative
+       concentration. The samples are untouched and still drawn; it is the
+       *scale* that is not allowed to claim water that cannot exist. */
+    const floor = meta(sel.c.value)?.floor;
+    const low = floor !== undefined ? Math.max(robust[0], floor) : robust[0];
+    if (low !== robust[0]) robust = [low, robust[1]];
+    return [asked[0] ?? low, asked[1] ?? robust[1]];
   }
 
   function labelFor(name: string): string {
@@ -245,6 +297,10 @@ export function makeFigure(root: HTMLElement, preset: Preset): Figure {
     if (last.hidden > 0) bits.push(`${last.hidden.toLocaleString()} outside the window`);
     if (last.missing > 0) bits.push(`${last.missing.toLocaleString()} with no value here`);
     if (last.uncolored > 0) bits.push(`${last.uncolored.toLocaleString()} with no color value`);
+    /* Said out loud, because the colour bar's numbers are not the data's
+       full range and a reader is entitled to know which they are looking
+       at. */
+    if (robust) bits.push(`colour ${ROBUST_LOW}–${ROBUST_HIGH}%`);
     caption.textContent = bits.join(' · ') + (preset.note ? ` · ${preset.note}` : '');
   }
 
@@ -458,6 +514,10 @@ export function makeFigure(root: HTMLElement, preset: Preset): Figure {
   });
   resetBtn.addEventListener('click', () => {
     for (const el of Object.values(box)) el.value = '';
+    if (preset.yBoxes) {
+      box.yLo.value = preset.yBoxes[0];
+      box.yHi.value = preset.yBoxes[1];
+    }
     heightBox.value = String(preset.height ?? 380);
     dotBox.value = String(preset.dot ?? 2.5);
     stepsBox.value = '24';

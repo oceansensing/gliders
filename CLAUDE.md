@@ -223,6 +223,43 @@ break silently: the SAAR atlas fetch, and the worker's own URL (which must be
 carries the base). `test:pages` reads the built HTML for root-absolute
 internal URLs and the sources for a bare `fetch('/…')`.
 
+## Colour limits are chosen, axis limits are not
+
+An **axis** takes the true minimum and maximum of what it was given. A plot
+that scaled a point off its own edge would be hiding data, and the engine
+does not do that.
+
+A **colour** axis is a lookup table with a couple of dozen entries, and
+stretching it to reach one outlier spends nearly all of them on water that is
+not there. So the default colour limits are the 2nd and 98th percentiles —
+matplotlib's and xarray's convention — sampled to 20,000 values rather than
+fully sorted, deterministically, because this runs on every redraw. The
+reader's own limits always win, the colour bar always shows the numbers in
+force, the caption says `colour 2–98%`, and values outside are drawn at the
+end colours rather than dropped.
+
+**Percentiles alone are not enough, and chlorophyll is why.** An optical
+sensor's dark counts put real readings below zero, so the 2nd percentile of a
+chlorophyll record on the DAC is about −0.03 µg/L — a negative concentration.
+`Plottable.floor` records what a quantity physically cannot go below, and it
+clamps the automatic limit only: not a sample is altered or hidden. It is
+absent where a quantity really is signed — temperature reaches −2 °C,
+spiciness and the current components are signed by construction — because a
+floor there would be a lie about the ocean rather than a defence against a
+sensor.
+
+The same rule colours the track, whose chlorophyll legend read
+`-0.08 – 8.54 µg/L` before it and `0 – 6.64 µg/L` after.
+
+## A depth axis starts at the surface
+
+The profile panels open with their y range pinned to 0. Left to the data the
+axis began at whatever the shallowest sample happened to be — 0.103 m on one
+deployment — which is a fact about the sampling rather than about the ocean,
+and it started two profiles of the same water at different depths. Written
+into the range box rather than forced behind it, so the reader can see the
+limit, change it, and get it back with Reset.
+
 ## The track figure is shared, not copied
 
 The map, its title and the legend under it are one component

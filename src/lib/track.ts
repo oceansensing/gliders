@@ -20,7 +20,7 @@ import L from 'leaflet';
    the page's own title. Imported by the module that builds the map rather
    than by each page that shows one, so a new page cannot forget it. */
 import 'leaflet/dist/leaflet.css';
-import { sample } from '@c4po/plot';
+import { robustRange, sample } from '@c4po/plot';
 
 export interface TrackOptions {
   /** Colormap for the time axis. */
@@ -34,6 +34,9 @@ export interface TrackColour {
   /** One value per row, aligned with `lon`/`lat`. */
   values: Float64Array;
   colormap: string;
+  /** A value the quantity cannot physically go below, clamping the automatic
+      colour limit. See `Plottable.floor`. */
+  floor?: number;
   /** Depth, so a profile's *surface* value is the one that reaches the map.
       Without it the first row of each profile is used, which is the same
       thing on a DAC dataset and not on every one. */
@@ -174,8 +177,14 @@ export function makeTrack(element: HTMLElement, options: TrackOptions = {}): Tra
 
     points.sort((p, q) => p.t - q.t);
 
-    /* The colour axis: what the reader asked for, or the data's own range —
-       the chosen variable's, or the mission's span when colouring by time. */
+    /* The colour axis: what the reader asked for, or the data's own range.
+       *
+       * **Percentiles for a variable, the true span for time.** A track
+       * coloured by chlorophyll had a minimum of −0.08 µg/L — a negative
+       * concentration — which is one sensor artefact setting the scale for
+       * the whole mission. A mission's clock has no such outliers, and its
+       * first and last profile are exactly what the reader wants the ends of
+       * the scale to mean. */
     let lo = Infinity;
     let hi = -Infinity;
     for (const p of points) {
@@ -184,6 +193,15 @@ export function makeTrack(element: HTMLElement, options: TrackOptions = {}): Tra
       if (p.v > hi) hi = p.v;
     }
     if (!Number.isFinite(lo) || !(hi > lo)) { lo = 0; hi = 1; }
+
+    if (colour) {
+      const values = points.map((p) => p.v);
+      const robust = robustRange(values, values.length);
+      if (robust) {
+        lo = colour.floor !== undefined ? Math.max(robust[0], colour.floor) : robust[0];
+        hi = robust[1];
+      }
+    }
     dataRange = { lo, hi };
 
     const asked = next.range;
