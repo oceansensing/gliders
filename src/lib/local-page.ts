@@ -176,7 +176,9 @@ export function startLocalPage(): void {
     const lat = source.columns.get('latitude');
     const lon = source.columns.get('longitude');
     const time = source.columns.get('time');
-    if (track && lat && lon && time) track.update(lon, lat, time, source.rows);
+    if (track && lat && lon && time) {
+      track.update({ lon, lat, time, n: source.rows });
+    }
 
     const tsNode = document.querySelector<HTMLElement>('[data-figure="ts"]');
     if (tsNode && !tsFigure) {

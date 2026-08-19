@@ -313,6 +313,87 @@ export function makeFigure(root: HTMLElement, preset: Preset): Figure {
     if (Number.isFinite(a) && Number.isFinite(b) && b > a) preset.onSelectX!(a, b);
   });
 
+  /**
+   * The pointer readout: built once, then only its numbers change.
+   *
+   * **Symbols, not names.** Spelled out, this line read "Absolute Salinity
+   * 32.1183 · Conservative Temperature 16.0676 · Depth 19.1766" — eighty
+   * characters, which in the T–S diagram's half-width column wrapped onto
+   * three lines, grew the figure's head from 26 px to 80 px, and dropped the
+   * plot 54 px out from under the pointer that summoned it. The plot's own
+   * axes carry the full label already, so the symbol is what belongs here
+   * anyway.
+   *
+   * **Every value sits in a slot of fixed width**, and that is the second
+   * half of holding still. With the text right-aligned and the numbers free
+   * to change length, `32.1102` becoming `9.87` shortened the whole line and
+   * slid the labels sideways under the pointer — stable vertically and
+   * jittering horizontally, which is no better. A fixed `ch` width per value
+   * plus tabular figures means the line is the same length whatever the
+   * numbers are, so nothing moves at all.
+   *
+   * Rebuilt only when the axes change: this runs on every pointer move, and
+   * replacing six nodes per move to write the same labels again would be
+   * churn for nothing.
+   */
+  interface Slot { value: HTMLElement }
+  let slots: Slot[] = [];
+  let slotKey = '';
+
+  function buildReadout(): void {
+    const names = [sel.x.value, sel.y.value, sel.c.value];
+    const key = names.join('|');
+    if (key === slotKey) return;
+    slotKey = key;
+    slots = [];
+    hover.replaceChildren();
+
+    names.forEach((name, i) => {
+      /* No colour axis chosen: no third slot, rather than an empty one that
+         reserves width for a value that will never arrive. */
+      if (i === 2 && !name) return;
+      /* **A fixed-width space, and it has to be.** `white-space: nowrap`
+         still collapses a run of ordinary spaces, so "  ·  " would render as
+         a single space and the three groups would crowd together. U+2002 is
+         not collapsible, so what is written here is what appears. */
+      if (slots.length > 0) hover.append(document.createTextNode('\u2002·\u2002'));
+      const label = document.createElement('span');
+      /* **U+2007 FIGURE SPACE: exactly one character wide in a monospace
+         face**, because it is defined as the width of a digit and every
+         glyph here is that width. A thin space (U+2009) sat the number
+         almost against its own label; an ordinary space would be collapsed
+         by `nowrap` where it meets the separator's. */
+      label.textContent = `${meta(name)?.short ?? meta(name)?.label ?? name}\u2007`;
+      const value = document.createElement('span');
+      /* A clock is 19 characters and a number rarely more than nine, so one
+         width for both would reserve a lot of nothing on every numeric
+         axis. */
+      value.className = isTime(name) ? 'ro-v ro-time' : 'ro-v';
+      hover.append(label, value);
+      slots.push({ value });
+    });
+  }
+
+  function showReadout(x: number, y: number, c: number): void {
+    buildReadout();
+    const names = [sel.x.value, sel.y.value, sel.c.value];
+    const values = [x, y, c];
+    slots.forEach((slot, i) => {
+      const v = values[i];
+      slot.value.textContent = Number.isFinite(v)
+        ? (isTime(names[i]) ? clock(v) : trim(v))
+        : '—';
+    });
+    hover.classList.add('live');
+  }
+
+  /** Emptied by class rather than by removing the nodes, so the slot keeps
+      the width it had and the figure does not twitch as the pointer leaves
+      and re-enters. */
+  function clearReadout(): void {
+    hover.classList.remove('live');
+  }
+
   /* The pointer readout. The dots are one path per color bin, so there is no
      element under the pointer to ask — the nearest placed point is found by
      search over what was actually drawn. */
@@ -343,18 +424,9 @@ export function makeFigure(root: HTMLElement, preset: Preset): Figure {
       const d = (p.sx - sx) ** 2 + (p.sy - sy) ** 2;
       if (d < bestD) { bestD = d; best = p; }
     }
-    if (bestD > 400) { hover.textContent = ''; ring?.remove(); ring = null; return; }
+    if (bestD > 400) { clearReadout(); ring?.remove(); ring = null; return; }
 
-    const xName = sel.x.value;
-    const yName = sel.y.value;
-    const cName = sel.c.value;
-    const show = (name: string, v: number): string =>
-      `${meta(name)?.label ?? name} ${isTime(name) ? clock(v) : trim(v)}`;
-    hover.textContent = [
-      show(xName, best.x),
-      show(yName, best.y),
-      cName && Number.isFinite(best.c) ? show(cName, best.c) : '',
-    ].filter(Boolean).join('  ·  ');
+    showReadout(best.x, best.y, best.c);
 
     if (!ring) {
       ring = document.createElementNS(NS, 'circle');
@@ -366,7 +438,7 @@ export function makeFigure(root: HTMLElement, preset: Preset): Figure {
     ring.setAttribute('cy', String(best.sy));
   });
   svg.addEventListener('pointerleave', () => {
-    hover.textContent = '';
+    clearReadout();
     ring?.remove();
     ring = null;
   });

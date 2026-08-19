@@ -155,6 +155,25 @@ Each of these shipped, was found by running the thing, and now has a gate.
   signal. Every window selection failed instantly with "signal is aborted
   without reason" and emptied the page. The controller belongs to a load, not
   to the page, and is created at the top of one.
+- **The pointer readout moved the figure it described.** An 80-character
+  line of spelled-out labels wrapped onto three lines in the T–S diagram's
+  half-width column: the figure's head grew from 26 px to 80 px and the plot
+  dropped 54 px the instant the pointer touched it. Symbols instead of names,
+  a slot that cannot wrap, and a reserved line fixed it — and then the
+  *numbers* were still sliding the labels sideways as their digits changed,
+  which needed a fixed `ch` width per value. `test:pages` reads all of it out
+  of the built CSS, because jsdom does no layout.
+- **Two variables arrived on screen under one name.** The DAC publishes
+  `bsipar_temp` — the PAR sensor's own internal temperature, `long_name:
+  sci_bsipar_temp` — with `standard_name: sea_water_temperature`. Matching on
+  `standard_name` made it and the CTD's `temperature` both "Temperature", in
+  the chip row and in the map's colour menu, with nothing to say one of them
+  was the inside of an instrument. An exact column-name match now outranks a
+  `standard_name` match, and a colliding label falls back to its column name.
+- **A `<select>` is as wide as its widest option.** The map's colour menu
+  contains "Potential density anomaly σ₀ (kg/m³)", so uncapped it pushed the
+  map's caption onto three lines — and because the map fills what the row
+  leaves it, the map lost the same 65 px.
 - **The plot's point cap was the binding constraint, not the browser.** It
   was 50,000, inherited from a decoder whose limit was 4,000 — so a deep
   two-month deployment was drawn at every third point before the reader had

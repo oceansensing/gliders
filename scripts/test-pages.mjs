@@ -141,6 +141,32 @@ section('the figures are styled after they are cloned');
      would otherwise swallow the pointerup that ends it. */
   ok('the selection band is styled and lets the pointer through',
     /\[data-figure\][^{]*\.select-band\s*\{[^}]*pointer-events:\s*none/.test(css));
+  /**
+   * The pointer readout must not move the figure it describes.
+   *
+   * Measured before the fix, at 1280×900: hovering the T–S diagram wrapped
+   * an 80-character readout onto three lines, grew the figure's head from
+   * 26 px to 80 px and dropped the plot 54 px — out from under the pointer
+   * that summoned it. Horizontally, right-aligned free-width numbers slid
+   * every label sideways as the digits changed.
+   *
+   * Four rules hold it still, and jsdom does no layout, so the only way to
+   * check them is to read the built stylesheet.
+   */
+  ok('the readout can never wrap onto a second line',
+    /\[data-plot-hover\]\s*\{[^}]*white-space:\s*nowrap/.test(css));
+  ok('and reserves its line even when empty',
+    /\[data-plot-hover\]\s*\{[^}]*min-height/.test(css));
+  ok('and is hidden rather than emptied, so the slot keeps its width',
+    /\[data-plot-hover\]\s*\{[^}]*visibility:\s*hidden/.test(css)
+    && /\[data-plot-hover\]\.live\s*\{[^}]*visibility:\s*visible/.test(css));
+  ok('each value sits in a fixed-width slot with tabular figures',
+    /\.ro-v\s*\{[^}]*min-width:\s*\d+ch/.test(css)
+    && /\.ro-v\s*\{[^}]*tabular-nums/.test(css));
+  /* The head itself must not be allowed to wrap, or the slot would simply
+     take a line of its own instead of shrinking. */
+  ok('the figure head does not wrap', /flex-wrap:\s*nowrap/.test(css));
+
   ok('runtime-built chips are styled globally',
     /\[data-chips\][^{]*\.chip\s*\{/.test(css));
   ok('runtime-built table rows too', /\[data-rows\]\s*tr\s*\{/.test(css));
@@ -173,6 +199,47 @@ section('the window controls');
     && doc.querySelector('[data-profile-load]') === null);
   ok('but the profile figure is still there',
     doc.querySelector('[data-figure="profile"]') !== null);
+}
+
+section('the map’s colour control and the profile pair');
+
+{
+  const doc = parse('deployment/index.html');
+  ok('the track has a colour-by control',
+    doc.querySelector('[data-track-colour]') !== null);
+  ok('with a label tied to it',
+    doc.querySelector('label[for="track-colour"]') !== null
+    && doc.querySelector('#track-colour') !== null);
+
+  /* Two profile panels, because a profile is read against another profile:
+     temperature beside salinity is how a thermocline is told from a
+     halocline. */
+  ok('there are two profile figures',
+    doc.querySelector('[data-figure="profile"]') !== null
+    && doc.querySelector('[data-figure="profile2"]') !== null);
+
+  /* Astro stamps its scoping attribute on *each* compound selector, so
+     `.track-colour select` is emitted as
+     `.track-colour[data-astro-cid-…] select[data-astro-cid-…]` — a pattern
+     expecting the two to be adjacent matches nothing. Minification also
+     folds `flex: 1 1 auto` to `flex:auto`. Both caught by this gate failing
+     against CSS that was in fact correct. */
+  const css = read('deployment/index.html');
+  /* A select is as wide as its widest option, and the widest here is
+     "Potential density anomaly σ₀ (kg/m³)". Uncapped it pushed the map's
+     caption onto three lines and took 65 px out of the map below it. */
+  ok('the colour select is width-capped',
+    /\.track-colour[^{]*select[^{]*\{[^}]*max-width/.test(css));
+  /* The range readout changes length with the variable, so its slot is
+     reserved — otherwise picking one reflows the caption and the map
+     resizes under the reader. */
+  ok('and the range readout has a reserved slot',
+    /\[data-track-note\][^{]*\{[^}]*min-width:\s*\d+ch/.test(css));
+  /* The map fills whatever height the T–S column takes, so the two columns
+     end level however tall the figure beside it is. */
+  ok('the map stretches to the figure column',
+    /align-items:\s*stretch/.test(css)
+    && /\.map[^{]*\{[^}]*flex:\s*(1|auto)/.test(css));
 }
 
 section('the prototype figure is hidden');

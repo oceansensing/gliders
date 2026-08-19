@@ -29,9 +29,31 @@ export interface TrackOptions {
   segments?: number;
 }
 
+/** What the track is coloured by. */
+export interface TrackColour {
+  /** One value per row, aligned with `lon`/`lat`. */
+  values: Float64Array;
+  colormap: string;
+  /** Depth, so a profile's *surface* value is the one that reaches the map.
+      Without it the first row of each profile is used, which is the same
+      thing on a DAC dataset and not on every one. */
+  depth?: Float64Array;
+}
+
+export interface TrackUpdate {
+  lon: Float64Array;
+  lat: Float64Array;
+  time: Float64Array;
+  n: number;
+  /** Omit to colour by time. */
+  colour?: TrackColour;
+}
+
 export interface Track {
   /** Redraw from new columns. */
-  update(lon: Float64Array, lat: Float64Array, time: Float64Array, n: number): void;
+  update(next: TrackUpdate): void;
+  /** The range the last draw coloured over, for a legend. */
+  readonly range: { lo: number; hi: number } | null;
   /** The Leaflet map, for callers that want to add to it. */
   readonly map: L.Map;
   /** Fit the view to the whole track. */
@@ -58,6 +80,7 @@ export function makeTrack(element: HTMLElement, options: TrackOptions = {}): Tra
   const lines = L.layerGroup().addTo(map);
   const ends = L.layerGroup().addTo(map);
   let bounds: L.LatLngBounds | null = null;
+  let range: { lo: number; hi: number } | null = null;
 
   /* **Leaflet measures its container once, at construction.** This map is
      built while the page is still assembling — the figures around it have no
@@ -87,39 +110,70 @@ export function makeTrack(element: HTMLElement, options: TrackOptions = {}): Tra
   });
   observer.observe(element);
 
-  function update(
-    lon: Float64Array, lat: Float64Array, time: Float64Array, n: number,
-  ): void {
+  function update(next: TrackUpdate): void {
+    const { lon, lat, time, n, colour } = next;
     lines.clearLayers();
     ends.clearLayers();
     bounds = null;
+    range = null;
 
     /* One position per profile, not per sample: every point in a dive shares
        a position on the DAC's `latitude`/`longitude`, so drawing all of them
-       is thousands of coincident vertices. Deduplicated by value, which also
-       drops the surface drift repeats. */
-    const points: Array<{ lat: number; lon: number; t: number }> = [];
+       is thousands of coincident vertices. Runs of the same position collapse
+       to one point, which also drops the surface drift repeats.
+       *
+       * **The value carried up with it is the shallowest one in the run.** A
+       * track coloured by temperature is asking what the water was like where
+       * the glider surfaced, not 900 m under it, and a profile's rows span
+       * the whole dive. Taking the first row instead would be right on a DAC
+       * dataset, whose rows descend, and wrong the moment one does not. */
+    interface Point { lat: number; lon: number; t: number; v: number }
+    const points: Point[] = [];
     let lastLat = NaN;
     let lastLon = NaN;
+    let bestDepth = Infinity;
+
     for (let i = 0; i < n; i++) {
       const a = lat[i];
       const o = lon[i];
       if (!Number.isFinite(a) || !Number.isFinite(o)) continue;
-      if (a === lastLat && o === lastLon) continue;
+
+      const v = colour ? colour.values[i] : time[i];
+      const d = colour?.depth ? colour.depth[i] : 0;
+
+      if (a === lastLat && o === lastLon) {
+        /* Same position: keep the shallowest finite value seen in the run. */
+        const here = points[points.length - 1];
+        if (here && Number.isFinite(v) && d < bestDepth) {
+          here.v = v;
+          bestDepth = d;
+        }
+        continue;
+      }
       lastLat = a;
       lastLon = o;
-      points.push({ lat: a, lon: o, t: time[i] });
+      bestDepth = Number.isFinite(v) ? d : Infinity;
+      points.push({ lat: a, lon: o, t: time[i], v });
     }
     if (points.length < 2) return;
 
     points.sort((p, q) => p.t - q.t);
 
-    const t0 = points[0].t;
-    const t1 = points[points.length - 1].t;
-    const span = t1 > t0 ? t1 - t0 : 1;
+    /* The colour axis: the chosen variable's own range, or the mission's
+       span when colouring by time. */
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const p of points) {
+      if (!Number.isFinite(p.v)) continue;
+      if (p.v < lo) lo = p.v;
+      if (p.v > hi) hi = p.v;
+    }
+    if (!Number.isFinite(lo) || !(hi > lo)) { lo = 0; hi = 1; }
+    range = { lo, hi };
+
     const want = Math.max(2, Math.min(options.segments ?? 240, points.length - 1));
     const stride = Math.max(1, Math.floor((points.length - 1) / want));
-    const cmap = options.map ?? 'cmo.thermal';
+    const cmap = colour?.colormap ?? options.map ?? 'cmo.thermal';
 
     const all: L.LatLngExpression[] = [];
     for (let i = 0; i + stride < points.length; i += stride) {
@@ -130,8 +184,16 @@ export function makeTrack(element: HTMLElement, options: TrackOptions = {}): Tra
         seg.push([points[k].lat, points[k].lon]);
       }
       all.push(...seg);
+      /* A segment whose value is missing is drawn muted rather than dropped:
+         the track is where the glider went, and a gap in one sensor is not a
+         gap in the path. */
+      const mid = [a.v, b.v].filter(Number.isFinite);
+      const t = mid.length
+        ? ((mid.reduce((x, y) => x + y, 0) / mid.length) - lo) / (hi - lo)
+        : NaN;
       L.polyline(seg, {
-        color: sample(cmap, (((a.t + b.t) / 2) - t0) / span),
+        color: Number.isFinite(t) ? sample(cmap, t) : undefined,
+        className: Number.isFinite(t) ? undefined : 'track-unknown',
         weight: 2.5,
         opacity: 0.95,
       }).addTo(lines);
@@ -154,5 +216,5 @@ export function makeTrack(element: HTMLElement, options: TrackOptions = {}): Tra
     if (bounds && bounds.isValid()) map.fitBounds(bounds, { padding: [24, 24] });
   }
 
-  return { update, map, fit };
+  return { update, map, fit, get range() { return range; } };
 }

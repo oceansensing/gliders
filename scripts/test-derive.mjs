@@ -25,6 +25,8 @@ import { decodeAtlas } from '../packages/teos10/atlas.ts';
 import { contour, levels } from '../packages/teos10/contour.ts';
 import { derive, sigmaField, DERIVED } from '../src/lib/seawater.ts';
 import { decodeFiles, toSource } from '../src/lib/local.ts';
+import { plottable } from '../src/lib/variables.ts';
+import { parseInfo } from '../packages/erddap/catalog.ts';
 
 const atlas = decodeAtlas(
   zlib.gunzipSync(fs.readFileSync('public/teos10/saar.bin.gz')).buffer,
@@ -148,6 +150,34 @@ section('isopycnals');
     ls.join(', '));
   ok('contours are traced', contour(field, 25).length > 5,
     `${contour(field, 25).length} segments at σ₀ 25`);
+}
+
+section('no two variables share a name on screen');
+
+{
+  /* `bsipar_temp` is the PAR sensor's own housekeeping temperature, and the
+     DAC publishes it with `long_name` "Temperature" — the seawater
+     measurement's name. Unresolved, the chip row offered two chips reading
+     "Temperature" and the map's colour menu two identical entries, with
+     nothing to say that one of them was the inside of an instrument. */
+  const info = parseInfo('electa-20260807T1633',
+    JSON.parse(fs.readFileSync('scripts/fixtures/erddap/info-electa.json', 'utf8')));
+  const vars = plottable(info.variables);
+
+  const labels = vars.map((v) => v.label);
+  const dupes = labels.filter((l, i) => labels.indexOf(l) !== i);
+  ok('every label is unique', dupes.length === 0, dupes.join(', ') || 'no collisions');
+
+  /* The seawater measurement keeps the plain name; the instrument's own
+     falls back to the column name, which is the unique thing about it. */
+  check('the CTD keeps "Temperature"',
+    vars.find((v) => v.name === 'temperature')?.label, 'Temperature');
+  check('and the sensor housekeeping channel does not',
+    vars.find((v) => v.name === 'bsipar_temp')?.label, 'Bsipar temp');
+
+  const shorts = vars.filter((v) => v.short.length > 13);
+  ok('no short form can overflow the readout slot', shorts.length === 0,
+    shorts.map((v) => v.short).join(', ') || 'all within 12 characters');
 }
 
 section('raw Slocum files, end to end');

@@ -21,6 +21,8 @@ import { DERIVED } from './seawater.ts';
 
 interface Display {
   label: string;
+  /** Compact form for the pointer readout; the label when omitted. */
+  short?: string;
   colormap: string;
   /** Sort key: lower comes first in the chip row. */
   rank: number;
@@ -28,33 +30,33 @@ interface Display {
 
 /** Matched on the column name first, then on `standard_name`. */
 const BY_NAME: Record<string, Display> = {
-  temperature: { label: 'Temperature', colormap: 'cmo.thermal', rank: 10 },
-  salinity: { label: 'Practical salinity', colormap: 'cmo.haline', rank: 20 },
-  conductivity: { label: 'Conductivity', colormap: 'cmo.haline', rank: 60 },
-  density: { label: 'Density (from the DAC)', colormap: 'cmo.dense', rank: 61 },
-  pressure: { label: 'Pressure', colormap: 'cmo.deep', rank: 970 },
-  depth: { label: 'Depth', colormap: 'cmo.deep', rank: 960 },
-  time: { label: 'Time', colormap: 'cmo.thermal', rank: 951 },
-  latitude: { label: 'Latitude', colormap: 'cmo.balance', rank: 980 },
-  longitude: { label: 'Longitude', colormap: 'cmo.balance', rank: 981 },
+  temperature: { label: 'Temperature', short: 'T', colormap: 'cmo.thermal', rank: 10 },
+  salinity: { label: 'Practical salinity', short: 'SP', colormap: 'cmo.haline', rank: 20 },
+  conductivity: { label: 'Conductivity', short: 'C', colormap: 'cmo.haline', rank: 60 },
+  density: { label: 'Density (from the DAC)', short: 'ρ', colormap: 'cmo.dense', rank: 61 },
+  pressure: { label: 'Pressure', short: 'p', colormap: 'cmo.deep', rank: 970 },
+  depth: { label: 'Depth', short: 'depth', colormap: 'cmo.deep', rank: 960 },
+  time: { label: 'Time', short: 'time', colormap: 'cmo.thermal', rank: 951 },
+  latitude: { label: 'Latitude', short: 'lat', colormap: 'cmo.balance', rank: 980 },
+  longitude: { label: 'Longitude', short: 'lon', colormap: 'cmo.balance', rank: 981 },
   potential_temperature: { label: 'Potential temperature (DAC)', colormap: 'cmo.thermal', rank: 62 },
   sound_speed: { label: 'Sound speed (from the DAC)', colormap: 'cmo.speed', rank: 63 },
-  chlorophyll_a: { label: 'Chlorophyll a', colormap: 'cmo.algae', rank: 30 },
+  chlorophyll_a: { label: 'Chlorophyll a', short: 'chl', colormap: 'cmo.algae', rank: 30 },
   cdom: { label: 'CDOM', colormap: 'cmo.matter', rank: 32 },
   beta_700nm: { label: 'Backscatter, 700 nm', colormap: 'cmo.turbid', rank: 33 },
   bsipar_par: { label: 'PAR', colormap: 'plasma', rank: 34 },
-  oxygen_concentration: { label: 'Dissolved oxygen', colormap: 'cmo.deep', rank: 25 },
+  oxygen_concentration: { label: 'Dissolved oxygen', short: 'O₂', colormap: 'cmo.deep', rank: 25 },
   oxygen_saturation: { label: 'Oxygen saturation', colormap: 'cmo.deep', rank: 26 },
   u: { label: 'Eastward current (depth-averaged)', colormap: 'cmo.balance', rank: 80 },
   v: { label: 'Northward current (depth-averaged)', colormap: 'cmo.balance', rank: 81 },
 };
 
 const BY_STANDARD: Record<string, Display> = {
-  sea_water_temperature: { label: 'Temperature', colormap: 'cmo.thermal', rank: 10 },
-  sea_water_practical_salinity: { label: 'Practical salinity', colormap: 'cmo.haline', rank: 20 },
-  sea_water_electrical_conductivity: { label: 'Conductivity', colormap: 'cmo.haline', rank: 60 },
-  sea_water_density: { label: 'Density (from the DAC)', colormap: 'cmo.dense', rank: 61 },
-  sea_water_pressure: { label: 'Pressure', colormap: 'cmo.deep', rank: 70 },
+  sea_water_temperature: { label: 'Temperature', short: 'T', colormap: 'cmo.thermal', rank: 10 },
+  sea_water_practical_salinity: { label: 'Practical salinity', short: 'SP', colormap: 'cmo.haline', rank: 20 },
+  sea_water_electrical_conductivity: { label: 'Conductivity', short: 'C', colormap: 'cmo.haline', rank: 60 },
+  sea_water_density: { label: 'Density (from the DAC)', short: 'ρ', colormap: 'cmo.dense', rank: 61 },
+  sea_water_pressure: { label: 'Pressure', short: 'p', colormap: 'cmo.deep', rank: 70 },
   moles_of_oxygen_per_unit_mass_in_sea_water: { label: 'Dissolved oxygen', colormap: 'cmo.deep', rank: 25 },
   mass_concentration_of_oxygen_in_sea_water: { label: 'Dissolved oxygen', colormap: 'cmo.deep', rank: 25 },
   mass_concentration_of_chlorophyll_a_in_sea_water: { label: 'Chlorophyll a', colormap: 'cmo.algae', rank: 30 },
@@ -78,6 +80,16 @@ const HINTS: Array<[RegExp, string]> = [
 export interface Plottable {
   name: string;
   label: string;
+  /**
+   * A compact form for the pointer readout.
+   *
+   * The readout sits above the plot, and the plot's own axes already carry
+   * the full label — so spelling "Conservative Temperature" there a second
+   * time cost 80 characters, which wrapped onto three lines in a half-width
+   * column and moved the figure 54 px out from under the pointer. The
+   * symbols are what this audience reads anyway.
+   */
+  short: string;
   units: string;
   colormap: string;
   rank: number;
@@ -132,15 +144,27 @@ const AXES = new Set([
 
 export function plottable(variables: readonly VariableInfo[]): Plottable[] {
   const out: Plottable[] = [];
+  /** Names this file names itself, which win a label collision. */
+  const known = new Set<string>();
 
   for (const v of variables) {
     const axis = AXES.has(v.name);
     if (v.ancillary && !axis) continue;
     const hit = BY_NAME[v.name] ?? (v.standardName ? BY_STANDARD[v.standardName] : undefined);
+    /* **Only an exact column-name match counts as ours.** A `standard_name`
+       match does not, because the DAC's own metadata is not always right:
+       `bsipar_temp` — `long_name: sci_bsipar_temp`, the PAR sensor's internal
+       temperature — is published with `standard_name: sea_water_temperature`.
+       Counting that as canonical made both it and the CTD's `temperature`
+       claim the name "Temperature", and the tie-break had nothing to break
+       the tie with. */
+    if (BY_NAME[v.name]) known.add(v.name);
     const engineering = /^(commanded_|measured_|[cmfxsu]_)/.test(v.name);
     out.push({
       name: v.name,
       label: hit?.label ?? (v.longName && v.longName !== v.name ? v.longName : humanise(v.name)),
+      short: hit?.short ?? abbreviate(
+        hit?.label ?? (v.longName && v.longName !== v.name ? v.longName : humanise(v.name))),
       units: normaliseUnits(v.units),
       colormap: colormapFor(v.name, v.standardName),
       rank: hit?.rank ?? (axis ? 950 : engineering ? 900 : 500),
@@ -153,6 +177,7 @@ export function plottable(variables: readonly VariableInfo[]): Plottable[] {
     out.push({
       name: d.name,
       label: d.label,
+      short: d.short,
       units: d.units,
       colormap: d.colormap,
       rank: DERIVED_RANK[d.name] ?? 50,
@@ -162,7 +187,41 @@ export function plottable(variables: readonly VariableInfo[]): Plottable[] {
     });
   }
 
+  for (const d of DERIVED) known.add(d.name);
+  disambiguate(out, known);
   return out.sort((a, b) => a.rank - b.rank || a.label.localeCompare(b.label));
+}
+
+/**
+ * Two variables must not arrive on screen under one name.
+ *
+ * `bsipar_temp` is the PAR sensor's own housekeeping temperature and the DAC
+ * publishes it with `long_name` "Temperature" — the same name the seawater
+ * measurement carries. So the chip row offered two chips reading
+ * "Temperature", the colour menu two identical entries, and a reader picking
+ * one of them had no way to know which they had picked or that they had
+ * chosen the inside of an instrument.
+ *
+ * Where a label collides, the entry this file names *by column* keeps it and
+ * the others fall back to their own column name — the one thing about them
+ * that is unique and that the file itself chose. A `standard_name` match is
+ * not enough to win, because that is exactly the metadata that was wrong.
+ */
+function disambiguate(out: Plottable[], known: Set<string>): void {
+  const byLabel = new Map<string, Plottable[]>();
+  for (const v of out) {
+    const group = byLabel.get(v.label) ?? [];
+    group.push(v);
+    byLabel.set(v.label, group);
+  }
+  for (const group of byLabel.values()) {
+    if (group.length < 2) continue;
+    for (const v of group) {
+      if (known.has(v.name)) continue;
+      v.label = humanise(v.name);
+      v.short = v.label.length <= 12 ? v.label : `${v.label.slice(0, 11)}…`;
+    }
+  }
 }
 
 /** Interleaved with the native fields rather than grouped after them: a
@@ -177,6 +236,16 @@ const DERIVED_RANK: Record<string, number> = {
   spice0: 42,
   soundSpeed: 43,
 };
+
+/**
+ * A last-resort short form, for the hundreds of sensor names no table can
+ * enumerate. Kept to 12 characters so the readout cannot grow without bound
+ * — the figure's height is reserved for one line and a long name would push
+ * the plot down, which is the bug this whole field exists to fix.
+ */
+function abbreviate(label: string): string {
+  return label.length <= 12 ? label : `${label.slice(0, 11)}…`;
+}
 
 /** CF units are written for machines. These are the same units, written the
     way they are printed on an axis. */

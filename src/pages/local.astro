@@ -171,7 +171,17 @@ import { LAB } from '../config';
   @media (min-width: 64rem) {
     .pair {
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-      align-items: start;
+      align-items: stretch;
+    }
+
+    .map-figure {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .map {
+      flex: 1 1 auto;
     }
   }
 
@@ -179,8 +189,23 @@ import { LAB } from '../config';
     margin: 0;
   }
 
+  /**
+   * The map fills the T–S column's full height, rather than standing at a
+   * height of its own.
+   *
+   * It was a flat 30rem beside a figure whose height is the plot plus its
+   * axis labels, its caption and its controls — so the two columns ended at
+   * different places and the row had a ragged foot. Stretching is also the
+   * only version that stays right when the reader changes the plot's height,
+   * which is a control the figure offers.
+   *
+   * Only above the breakpoint: below it the grid is a single column, each
+   * row sizes itself, and `flex: 1` against no definite height would collapse
+   * the map to nothing — hence the floor, which is what the stacked layout
+   * actually uses.
+   */
   .map {
-    height: 30rem;
+    min-height: 22rem;
     border: 1px solid var(--border);
     border-radius: var(--radius);
     background: var(--bg-subtle);

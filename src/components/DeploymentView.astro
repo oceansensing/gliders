@@ -35,7 +35,11 @@ import PlotFigure from './PlotFigure.astro';
     <figure class="map-figure">
       <figcaption class="topline">
         <span class="eyebrow">Track</span>
-        <span class="mono muted" data-track-note></span>
+        <span class="track-colour">
+          <label class="eyebrow" for="track-colour">colour by</label>
+          <select class="field" id="track-colour" data-track-colour></select>
+          <span class="mono muted" data-track-note></span>
+        </span>
       </figcaption>
       <div class="map" data-map role="application" aria-label="Glider track"></div>
     </figure>
@@ -59,14 +63,23 @@ import PlotFigure from './PlotFigure.astro';
     time. It had its own window controls and its own fetch, which was a
     second way to ask the same question and a second answer to keep in step
     with the first. The window at the top of the page now governs every
-    figure, so this reads whatever is loaded.
+    figure, so these read whatever is loaded.
+
+    Two of them, side by side, because a profile is read against another
+    profile: temperature beside salinity is how you tell a thermocline from
+    a halocline, and how you see which of the two a density step came from.
+    Either axis is the reader's to change.
   -->
   <section class="profiles">
-    <PlotFigure
-      id="profile"
-      title="Profiles"
-      hint="Every profile in the loaded window, against depth."
-    />
+    <h2>Profiles</h2>
+    <p class="muted lede">
+      Every profile in the loaded window, against depth. Two panels so a pair
+      can be compared; both take any variable.
+    </p>
+    <div class="pair">
+      <PlotFigure id="profile" title="Temperature" hint="Waiting for data…" />
+      <PlotFigure id="profile2" title="Salinity" hint="Waiting for data…" />
+    </div>
   </section>
 
   <details class="aside">
@@ -160,7 +173,17 @@ import PlotFigure from './PlotFigure.astro';
   @media (min-width: 64rem) {
     .pair {
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-      align-items: start;
+      align-items: stretch;
+    }
+
+    .map-figure {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .map {
+      flex: 1 1 auto;
     }
   }
 
@@ -168,8 +191,23 @@ import PlotFigure from './PlotFigure.astro';
     margin: 0;
   }
 
+  /**
+   * The map fills the T–S column's full height, rather than standing at a
+   * height of its own.
+   *
+   * It was a flat 30rem beside a figure whose height is the plot plus its
+   * axis labels, its caption and its controls — so the two columns ended at
+   * different places and the row had a ragged foot. Stretching is also the
+   * only version that stays right when the reader changes the plot's height,
+   * which is a control the figure offers.
+   *
+   * Only above the breakpoint: below it the grid is a single column, each
+   * row sizes itself, and `flex: 1` against no definite height would collapse
+   * the map to nothing — hence the floor, which is what the stacked layout
+   * actually uses.
+   */
   .map {
-    height: 30rem;
+    min-height: 22rem;
     border: 1px solid var(--border);
     border-radius: var(--radius);
     background: var(--bg-subtle);
@@ -181,6 +219,40 @@ import PlotFigure from './PlotFigure.astro';
     align-items: baseline;
     gap: var(--space-sm);
     margin-block-end: var(--space-2xs);
+    flex-wrap: wrap;
+  }
+
+  .track-colour {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-xs);
+    margin-inline-start: auto;
+    min-width: 0;
+  }
+
+  .track-colour .eyebrow {
+    white-space: nowrap;
+  }
+
+  /**
+   * **A select is as wide as its widest option**, and the widest here is
+   * "Potential density anomaly σ₀ (kg/m³)". Left to size itself it pushed
+   * the caption onto three lines — an 85 px strip above a map that had to
+   * give up the same 65 px, because the map fills what the row leaves it.
+   * Capped, and the browser truncates the option text itself.
+   */
+  .track-colour select {
+    max-width: 15rem;
+    min-width: 0;
+  }
+
+  /* The range changes length as the variable changes, so it is reserved:
+     otherwise picking a variable reflows the caption and takes the height
+     out of the map below it. */
+  [data-track-note] {
+    min-width: 15ch;
+    text-align: end;
+    white-space: nowrap;
   }
 
   h2 {
@@ -201,6 +273,13 @@ import PlotFigure from './PlotFigure.astro';
 
   .profiles {
     margin-block-start: var(--space-xl);
+  }
+
+  /* The profile pair shares `.pair`'s grid, but not the map row's stretch:
+     two figures of the same height have nothing to stretch to, and
+     `align-items: start` keeps their titles on one line. */
+  .profiles .pair {
+    align-items: start;
   }
 
   .controls {
@@ -257,6 +336,13 @@ import PlotFigure from './PlotFigure.astro';
     background: currentColor;
     vertical-align: 0.1em;
     opacity: 0.7;
+  }
+
+  /* A stretch whose chosen variable has no value there. The path is still
+     where the glider went. */
+  .track-unknown {
+    stroke: var(--text-muted);
+    opacity: 0.35;
   }
 
   .track-start {

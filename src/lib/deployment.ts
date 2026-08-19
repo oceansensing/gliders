@@ -80,6 +80,7 @@ export function startDeploymentPage(): void {
   const linksEl = at('[data-links]');
   const qcBox = at<HTMLInputElement>('[data-qc]');
   const trackNote = at('[data-track-note]');
+  const trackColour = at<HTMLSelectElement>('[data-track-colour]');
   const fromBox = at<HTMLInputElement>('[data-from]');
   const toBox = at<HTMLInputElement>('[data-to]');
   const applyBtn = at<HTMLButtonElement>('[data-apply]');
@@ -110,6 +111,7 @@ export function startDeploymentPage(): void {
   let track: Track | null = null;
   let tsFigure: Figure | null = null;
   let profileFigure: Figure | null = null;
+  let profileFigure2: Figure | null = null;
   const sectionFigures = new Map<string, Figure>();
   /** The prototype cloned for each section. Rendered hidden by the
       component, because a compiled Astro component cannot be instantiated at
@@ -308,15 +310,10 @@ export function startDeploymentPage(): void {
        it reads whatever the window loaded — it used to fetch its own copy,
        which was a second answer to keep in step with the first. */
     profileFigure?.update(src);
+    profileFigure2?.update(src);
     if (!table || !info) return;
 
-    const lat = table.columns.get(info.latVar);
-    const lon = table.columns.get(info.lonVar);
-    const time = table.columns.get(info.timeVar);
-    if (track && lat && lon && time) {
-      track.update(lon, lat, time, table.rows);
-      trackNote.textContent = 'coloured by time';
-    }
+    paintTrack();
 
     const scope = window_
       ? `${date(window_.from)} → ${date(window_.to)}`
@@ -339,6 +336,78 @@ export function startDeploymentPage(): void {
         + ' data through them, or the server would not answer for them.';
     }
   }
+
+  /**
+   * The track, coloured by whatever the reader picked.
+   *
+   * The value that reaches the map is the **shallowest** one in each
+   * profile — a track coloured by temperature is asking what the water was
+   * like where the glider surfaced, not what it was at the bottom of the
+   * dive. `makeTrack` does that reduction; this decides which column and
+   * which scale it uses.
+   */
+  function paintTrack(): void {
+    if (!track || !table || !info) return;
+    const src = source();
+    const lat = src.columns.get(info.latVar);
+    const lon = src.columns.get(info.lonVar);
+    const time = src.columns.get(info.timeVar);
+    if (!lat || !lon || !time) return;
+
+    fillTrackColours();
+    const name = trackColour.value;
+    const v = name && name !== info.timeVar ? src.columns.get(name) : undefined;
+    const meta = vars.find((x) => x.name === name);
+
+    track.update({
+      lon, lat, time, n: table.rows,
+      colour: v && meta
+        ? { values: v, colormap: meta.colormap, depth: src.columns.get(info.depthVar ?? 'depth') }
+        : undefined,
+    });
+
+    const range = track.range;
+    if (!range) { trackNote.textContent = ''; return; }
+    trackNote.textContent = v && meta
+      ? `${trim(range.lo)} – ${trim(range.hi)}${meta.units ? ` ${meta.units}` : ''}`
+      : `${date(range.lo)} → ${date(range.hi)}`;
+  }
+
+  /** The colour menu, filled from what the deployment actually has. */
+  function fillTrackColours(): void {
+    if (!info) return;
+    const options = vars.filter((v) =>
+      (v.name === info!.timeVar || v.section) && hasAnyIn(v.name));
+    const key = options.map((v) => v.name).join(',');
+    if (key === trackColourKey) return;
+    trackColourKey = key;
+
+    const keep = trackColour.value;
+    trackColour.replaceChildren();
+    for (const v of options) {
+      const opt = document.createElement('option');
+      opt.value = v.name;
+      opt.textContent = v.units ? `${v.label} (${v.units})` : v.label;
+      trackColour.append(opt);
+    }
+    trackColour.value = options.some((v) => v.name === keep) ? keep : info.timeVar;
+  }
+
+  let trackColourKey = '';
+
+  /** True when the column exists in what is loaded *or* derived and holds a
+      value somewhere — a chip's worth of data, for the map's menu. */
+  const hasAnyIn = (name: string): boolean => {
+    const col = table?.columns.get(name) ?? derivedColumns.get(name);
+    if (!col) return false;
+    for (let i = 0; i < col.length; i++) if (col[i] === col[i]) return true;
+    return false;
+  };
+
+  trackColour.addEventListener('change', () => {
+    paintTrack();
+    remember();
+  });
 
   // ---- loading -----------------------------------------------------------
 
@@ -401,12 +470,24 @@ export function startDeploymentPage(): void {
         note: 'contours are σ₀',
       });
     }
+    /* Two panels, opening on the pair a reader compares first: a
+       thermocline and a halocline look the same in one profile and obviously
+       different across two. Both are ordinary figures, so either axis can be
+       changed to anything the deployment carries. */
     const profileNode = document.querySelector<HTMLElement>('[data-figure="profile"]');
     if (profileNode && !profileFigure) {
       profileFigure = makeFigure(profileNode, {
         x: 'temperature', y: info.depthVar ?? 'depth',
         c: info.timeVar, flipY: true, style: 'dots', dot: 2.5, height: 420,
         map: 'cmo.thermal',
+      });
+    }
+    const profileNode2 = document.querySelector<HTMLElement>('[data-figure="profile2"]');
+    if (profileNode2 && !profileFigure2) {
+      profileFigure2 = makeFigure(profileNode2, {
+        x: 'salinity', y: info.depthVar ?? 'depth',
+        c: info.timeVar, flipY: true, style: 'dots', dot: 2.5, height: 420,
+        map: 'cmo.haline',
       });
     }
     const mapNode = document.querySelector<HTMLElement>('[data-map]');
@@ -529,6 +610,8 @@ export function startDeploymentPage(): void {
     const names = wanted ? wanted.split(',').filter(Boolean) : DEFAULT_SECTIONS;
     selected = new Set(names.filter((n) => vars.some((v) => v.name === n)));
     if (params.get('qc') === 'off') qcBox.checked = false;
+    const wantedTrack = params.get('track');
+    if (wantedTrack && !trackColour.value) trackColour.value = wantedTrack;
     /* Only on the first load: after that `window_` is what the reader chose
        and the query string is following it, not leading. */
     if (!restored) {
@@ -548,6 +631,11 @@ export function startDeploymentPage(): void {
     else next.delete('vars');
     if (!qcBox.checked) next.set('qc', 'off');
     else next.delete('qc');
+    if (trackColour.value && trackColour.value !== info?.timeVar) {
+      next.set('track', trackColour.value);
+    } else {
+      next.delete('track');
+    }
     if (window_) {
       next.set('t0', String(Math.round(window_.from)));
       next.set('t1', String(Math.round(window_.to)));
@@ -561,6 +649,13 @@ export function startDeploymentPage(): void {
   prototype = document.querySelector<HTMLElement>('[data-figure="prototype"]');
   void load();
 }
+
+const trim = (v: number): string => {
+  if (!Number.isFinite(v)) return '—';
+  const size = Math.abs(v);
+  if (size !== 0 && (size < 1e-3 || size >= 1e6)) return v.toExponential(2);
+  return String(Math.round(v * 100) / 100);
+};
 
 const date = (t: number): string =>
   Number.isFinite(t) ? new Date(t * 1000).toISOString().slice(0, 10) : '—';

@@ -247,37 +247,42 @@ export function toSource(
 export function variablesForTable(
   columns: readonly { name: string; unit: string; source: string }[],
 ): Plottable[] {
-  const KNOWN: Record<string, { label: string; map: string; rank: number }> = {
-    depth: { label: 'Depth', map: 'cmo.deep', rank: 960 },
-    temperature_conservative: { label: 'Conservative Temperature', map: 'cmo.thermal', rank: 11 },
-    salinity_absolute: { label: 'Absolute Salinity', map: 'cmo.haline', rank: 21 },
-    salinity_reference: { label: 'Reference Salinity', map: 'cmo.haline', rank: 21 },
-    salinity_practical: { label: 'Practical salinity', map: 'cmo.haline', rank: 22 },
-    sigma0: { label: 'Potential density anomaly σ₀', map: 'cmo.dense', rank: 40 },
-    density: { label: 'In-situ density', map: 'cmo.dense', rank: 41 },
-    spice0: { label: 'Spiciness π₀', map: 'cmo.balance', rank: 42 },
-    sound_speed: { label: 'Sound speed', map: 'cmo.speed', rank: 43 },
-    sci_water_temp: { label: 'Temperature', map: 'cmo.thermal', rank: 10 },
+  const KNOWN: Record<string, { label: string; short?: string; map: string; rank: number }> = {
+    depth: { label: 'Depth', short: 'depth', map: 'cmo.deep', rank: 960 },
+    temperature_conservative: { label: 'Conservative Temperature', short: 'CT', map: 'cmo.thermal', rank: 11 },
+    salinity_absolute: { label: 'Absolute Salinity', short: 'SA', map: 'cmo.haline', rank: 21 },
+    salinity_reference: { label: 'Reference Salinity', short: 'SR', map: 'cmo.haline', rank: 21 },
+    salinity_practical: { label: 'Practical salinity', short: 'SP', map: 'cmo.haline', rank: 22 },
+    sigma0: { label: 'Potential density anomaly σ₀', short: 'σ₀', map: 'cmo.dense', rank: 40 },
+    density: { label: 'In-situ density', short: 'ρ', map: 'cmo.dense', rank: 41 },
+    spice0: { label: 'Spiciness π₀', short: 'π₀', map: 'cmo.balance', rank: 42 },
+    sound_speed: { label: 'Sound speed', short: 'c', map: 'cmo.speed', rank: 43 },
+    sci_water_temp: { label: 'Temperature', short: 'T', map: 'cmo.thermal', rank: 10 },
     sci_rbrctd_temperature_00: { label: 'Temperature (RBR)', map: 'cmo.thermal', rank: 10 },
-    sci_water_cond: { label: 'Conductivity', map: 'cmo.haline', rank: 60 },
-    sci_water_pressure: { label: 'Pressure', map: 'cmo.deep', rank: 970 },
+    sci_water_cond: { label: 'Conductivity', short: 'C', map: 'cmo.haline', rank: 60 },
+    sci_water_pressure: { label: 'Pressure', short: 'p', map: 'cmo.deep', rank: 970 },
     m_depth: { label: 'Depth (flight)', map: 'cmo.deep', rank: 960 },
-    latitude: { label: 'Latitude', map: 'cmo.balance', rank: 980 },
-    longitude: { label: 'Longitude', map: 'cmo.balance', rank: 981 },
-    time: { label: 'Time', map: 'cmo.thermal', rank: 951 },
+    latitude: { label: 'Latitude', short: 'lat', map: 'cmo.balance', rank: 980 },
+    longitude: { label: 'Longitude', short: 'lon', map: 'cmo.balance', rank: 981 },
+    time: { label: 'Time', short: 'time', map: 'cmo.thermal', rank: 951 },
   };
   const AXIS = new Set(['time', 'latitude', 'longitude', 'sci_water_pressure', 'm_depth', 'depth']);
 
   const out: Plottable[] = [{
-    name: 'time', label: 'Time', units: '', colormap: 'cmo.thermal',
+    name: 'time', label: 'Time', short: 'time', units: '', colormap: 'cmo.thermal',
     rank: 951, derived: false, section: false,
   }];
 
   for (const c of columns) {
     const known = KNOWN[c.name];
+    const label = known?.label ?? c.name;
     out.push({
       name: c.name,
-      label: known?.label ?? c.name,
+      label,
+      /* A Slocum carries hundreds of sensors with names no table can list,
+         so the fallback truncates: the readout is reserved one line, and an
+         unbounded name there would push the plot down. */
+      short: known?.short ?? (label.length <= 12 ? label : `${label.slice(0, 11)}…`),
       units: prettyUnit(c.unit),
       colormap: known?.map ?? 'viridis',
       rank: known?.rank ?? (c.source === 'derived' ? 100 : 500),

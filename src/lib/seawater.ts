@@ -38,6 +38,9 @@ import {
 export interface Derived {
   name: string;
   label: string;
+  /** The symbol an oceanographer reads faster than the name. Used by the
+      pointer readout, where the axes already carry the full label. */
+  short: string;
   units: string;
   /** cmocean map that suits the field. */
   colormap: string;
@@ -55,6 +58,7 @@ export interface Derived {
 export const DERIVED: readonly Derived[] = [
   {
     name: 'sa',
+    short: 'SA',
     label: 'Absolute Salinity',
     units: 'g/kg',
     colormap: 'cmo.haline',
@@ -63,6 +67,7 @@ export const DERIVED: readonly Derived[] = [
   },
   {
     name: 'ct',
+    short: 'CT',
     label: 'Conservative Temperature',
     units: '°C',
     colormap: 'cmo.thermal',
@@ -71,6 +76,7 @@ export const DERIVED: readonly Derived[] = [
   },
   {
     name: 'pt',
+    short: 'θ',
     label: 'Potential temperature',
     units: '°C',
     colormap: 'cmo.thermal',
@@ -79,6 +85,7 @@ export const DERIVED: readonly Derived[] = [
   },
   {
     name: 'rho',
+    short: 'ρ',
     label: 'In-situ density',
     units: 'kg/m³',
     colormap: 'cmo.dense',
@@ -86,6 +93,7 @@ export const DERIVED: readonly Derived[] = [
   },
   {
     name: 'sigma0',
+    short: 'σ₀',
     label: 'Potential density anomaly σ₀',
     units: 'kg/m³',
     colormap: 'cmo.dense',
@@ -94,6 +102,7 @@ export const DERIVED: readonly Derived[] = [
   },
   {
     name: 'spice0',
+    short: 'π₀',
     label: 'Spiciness π₀',
     units: 'kg/m³',
     colormap: 'cmo.balance',
@@ -102,6 +111,7 @@ export const DERIVED: readonly Derived[] = [
   },
   {
     name: 'soundSpeed',
+    short: 'c',
     label: 'Sound speed',
     units: 'm/s',
     colormap: 'cmo.speed',
