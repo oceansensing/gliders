@@ -334,31 +334,49 @@ hours is 2.31 m/s: just above that, well below the artefacts. An earlier
 20 km cut — 0.93 m/s — split 16.3% of missions, and what it was splitting was
 Spray gliders and `silbo` riding the Gulf Stream for real.
 
-But **a third of the long steps are not a speed at all**: 2,523 of 7,343
-follow a gap of over nine hours. That is the shape of a glider recovered,
-carried somewhere and put back in with both ends under one id — the elapsed
-time is days, so the speed is unremarkable and only the gap gives it away.
-`ga_563-20151124T2147-delayed` moves 50 km over 25.6 days. No distance cut
-catches that without also cutting the Gulf Stream.
+So two rules — over **50 km**, or over **2.5 m/s** where the times are known.
+Together: **239 steps, 0.047%, on 141 missions**, and 4.8% of missions come
+out in more than one run, against 16.3% at 20 km. Fixes dropped as single bad
+positions: 57, against 1,566.
 
-So three rules — over **50 km**, over **2.5 m/s**, or a gap over **24 hours**
-with more than 15 km covered. Together: **717 steps, 0.140%, on 329 missions**
-— a fifth of what 20 km broke, catching 484 steps it missed. 11.8% of missions
-come out in more than one run.
+The distance cap has to stay even with a clock, because **a vehicle flown
+across an ocean during a long silence looks slow**: 4,000 km over 30 days is
+1.54 m/s, which no speed test rejects. And the speed rule has to be there
+because the deployment page draws fixes seconds apart, where no distance rule
+would ever trip.
 
-All three **break the line rather than bridge it**, which is what the plots do
-with a gap and for the same reason. A fix unreachable from *both* neighbours
-while they are reachable from each other is dropped outright: that is one
-wrong position, not a vehicle that went somewhere.
+Both **break the line rather than bridge it**, which is what the plots do with
+a gap and for the same reason. A fix unreachable from *both* neighbours while
+they are reachable from each other is dropped outright: that is one wrong
+position, not a vehicle that went somewhere.
 
-The gap rule is why the shards carry a clock. Quantised to ten minutes, which
-costs 0.30 MB across the archive against 1.02 MB at full precision and is a
-1.4% error on a six-hour step — nothing against a 2.5 m/s threshold.
+### The rule that did not survive its own measurement
+
+A third of the long steps are not a speed at all — 2,523 of 7,343 follow a gap
+of over nine hours — so a third rule looked obviously right: four missed
+reports and the vehicle has moved, so nobody watched it go. Breaking on *a gap
+over 24 h with more than 15 km covered* caught 474 steps the other two miss.
+
+Then those 474 were measured. Median **30 km over 2.1 days, which is
+0.16 m/s**, and **434 of them slower than 0.3 m/s** — slower than a glider
+swims unaided. Not vehicles that were carried: vehicles that quietly kept
+swimming while the satellite link was down. It doubled the missions that split,
+118 to 292, and what it split were the fast Spray gliders it was meant to
+protect.
+
+**A long gap is evidence that nobody was watching, not evidence that anything
+happened.** It was removed — and finding that out is what the baked clock was
+worth, since without the elapsed time those 474 steps are indistinguishable
+from transport. Quantised to ten minutes, 0.30 MB across the archive against
+1.02 MB at full precision, a 1.4% error on a six-hour step. On the catalog it
+now changes 6 steps and no missions; its standing use is the deployment page,
+and the next one is colouring a track by when each stretch happened rather
+than by how far along the fix index it sits.
 
 The end marker takes the end of the last *run*, not of the record — otherwise
 the one mark claiming to say where the glider is sits in an ocean it was never
 in. `test:tracks` re-derives the whole thing from the committed shards and
-asserts no drawn step exceeds the cap: the longest is 49.7 km against a raw
+asserts no drawn step exceeds the cap: the longest is 49.8 km against a raw
 worst of 9,295.
 
 **And a run holding under 2% of a mission's fixes does not set the view.**

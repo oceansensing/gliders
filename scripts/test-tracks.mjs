@@ -78,18 +78,24 @@ section('how far a glider gets');
   ok('the same 5 km over six hours is', reachable([38, -74], [38.045, -74], 21600));
 
   /**
-   * The third rule, and the only one that catches a glider carried somewhere
-   * slowly. `ga_563-20151124T2147-delayed` moves 50 km over 25.6 days: an
-   * unremarkable speed, an impossible thing to have watched happen.
+   * **A long gap is not, by itself, evidence of anything.** A rule breaking
+   * on one was tried and removed: 434 of the 474 steps it caught were slower
+   * than 0.3 m/s, which is slower than a glider swims unaided — vehicles that
+   * quietly kept going while the satellite link was down, not vehicles that
+   * were carried. It doubled the missions that split and what it split were
+   * the fast Spray gliders it was meant to protect.
    */
-  ok('a long gap with the vehicle moved is not a path',
-    !reachable([38, -74], [38.25, -74], 5 * 86400),
-    `${stepKm([38, -74], [38.25, -74]).toFixed(0)} km after 5 days`);
-  ok('but a long gap with the vehicle still is',
-    reachable([38, -74], [38.05, -74], 5 * 86400),
-    `${stepKm([38, -74], [38.05, -74]).toFixed(1)} km after 5 days — it sat there`);
-  ok('and the same distance inside a day is fine',
-    reachable([38, -74], [38.25, -74], 20 * 3600));
+  ok('a week of silence with the glider still swimming is a path',
+    reachable([38, -74], [38.25, -74], 5 * 86400),
+    `${stepKm([38, -74], [38.25, -74]).toFixed(0)} km over 5 days — `
+    + `${(stepKm([38, -74], [38.25, -74]) * 1000 / (5 * 86400)).toFixed(2)} m/s, it swam that`);
+  /* What no speed test can catch, and why the distance cap has to stay: a
+     vehicle flown across an ocean during a long silence looks slow. */
+  ok('but a flight across an ocean during a silence is not',
+    !reachable([38, -74], [38, -30], 30 * 86400),
+    `${stepKm([38, -74], [38, -30]).toFixed(0)} km at `
+    + `${(stepKm([38, -74], [38, -30]) * 1000 / (30 * 86400)).toFixed(2)} m/s — `
+    + 'a plausible speed, an implausible journey');
 }
 
 section('the clock');

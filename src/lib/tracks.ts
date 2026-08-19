@@ -164,36 +164,45 @@ export function encodeTrack(path: ReadonlyArray<readonly [number, number]>,
  * 20 km — 0.93 m/s — split 16.3% of missions, and what it was splitting was
  * Spray gliders and `silbo` riding the Gulf Stream for real.
  *
- * But a third of the long steps are not a speed at all. **2,523 of 7,343
- * follow a gap of more than nine hours**, and that is the shape of a glider
- * recovered, carried somewhere, and put back in with both ends filed under
- * one id: the elapsed time is days, so the speed is unremarkable and only the
- * gap gives it away. `ga_563-20151124T2147-delayed` moves 50 km over 25.6
- * days. No distance cut catches that without also cutting the Gulf Stream.
+ * So two rules:
  *
- * So, three rules:
+ * - **over 50 km in one step** — impossible whatever the clock says, and the
+ *   backstop that catches a vehicle flown somewhere during a long silence,
+ *   which no speed test can (4,000 km over 30 days is 1.54 m/s);
+ * - **over 2.5 m/s**, wherever the times are known — above the fastest
+ *   current in the ocean. This is the physically meaningful test, and it is
+ *   what the distance cut is a proxy for at six-hourly sampling. It does the
+ *   real work on the deployment page, where fixes are seconds apart and no
+ *   distance rule would ever trip.
  *
- * - **over 50 km in one step** — impossible whatever the clock says;
- * - **over 2.5 m/s** — above the fastest current in the ocean;
- * - **a gap over 24 hours with more than 15 km covered** — four missed
- *   reports and the vehicle has moved: wherever it went, the straight line is
- *   not a record of it.
+ * Together they break **239 steps, 0.047%, on 141 missions**, and 4.8% of
+ * missions come out in more than one run.
  *
- * Together they break **717 steps, 0.140%, on 329 missions** — a fifth of
- * what the 20 km cut broke, while catching 484 steps it missed entirely.
+ * ## A rule that was tried and does not survive its own measurement
  *
- * All three **break the line rather than bridge it**, which is what the plots
- * do with a gap and for the same reason. And a fix unreachable from *both*
- * neighbours while they are reachable from each other is dropped outright —
- * that is one wrong position, not a vehicle that went somewhere.
+ * A third of the long steps are not a speed at all — 2,523 of 7,343 follow a
+ * gap of over nine hours — so a gap rule looked obviously right: four missed
+ * reports and the vehicle has moved, therefore nobody watched it go. Breaking
+ * on *a gap over 24 hours with more than 15 km covered* caught 474 steps that
+ * the two rules above miss.
+ *
+ * Then those 474 were measured. Their median is **30 km over 2.1 days, which
+ * is 0.16 m/s**, and **434 of them are slower than 0.3 m/s** — slower than a
+ * glider swims unaided. They are not vehicles that were carried; they are
+ * vehicles that quietly kept swimming while the satellite link was down. The
+ * rule more than doubled the missions that split, 118 to 292, and what it was
+ * splitting were exactly the fast Spray gliders it was meant to protect.
+ *
+ * The lesson is worth keeping: **a long gap is evidence that nobody was
+ * watching, not evidence that anything happened.** It was removed.
+ *
+ * Both surviving rules **break the line rather than bridge it**, which is what
+ * the plots do with a gap and for the same reason. And a fix unreachable from
+ * *both* neighbours while they are reachable from each other is dropped
+ * outright — that is one wrong position, not a vehicle that went somewhere.
  */
 export const MAX_STEP_KM = 50;
 export const MAX_SPEED_MS = 2.5;
-export const MAX_GAP_S = 24 * 3600;
-/** Below this, a long gap is not worth breaking for: the glider sat still,
-    and a straight line between two places 15 km apart is a fair sketch of
-    however it got between them. */
-export const GAP_STEP_KM = 15;
 
 /**
  * The runs that are the mission, rather than a handful of stray fixes.
@@ -234,8 +243,7 @@ export function reachable(a: readonly [number, number], b: readonly [number, num
   const km = stepKm(a, b);
   if (!(km <= MAX_STEP_KM)) return false;
   if (dtSeconds === undefined || !(dtSeconds > 0)) return true;
-  if ((km * 1000) / dtSeconds > MAX_SPEED_MS) return false;
-  return !(dtSeconds > MAX_GAP_S && km > GAP_STEP_KM);
+  return (km * 1000) / dtSeconds <= MAX_SPEED_MS;
 }
 
 /**

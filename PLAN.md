@@ -25,8 +25,9 @@ gates the deploy and runs entirely offline.
   lot — and loaded a year at a time; only what is still reporting is fetched
   from the DAC.
 - **Positions the glider could not have swum are not drawn.** Over 50 km in a
-  step, over 2.5 m/s, or a gap over 24 hours with the vehicle moved: the line
-  breaks rather than crossing an ocean, and a single bad fix is dropped.
+  step, or over 2.5 m/s where the shards' clock says so: the line breaks
+  rather than crossing an ocean, and a single bad fix is dropped. 4.8% of
+  missions come out in more than one run.
 - A dot at each glider's last known position, styled active vs archived, and
   shrunk when the archive is up so it does not bury the tracks.
 - Clicking a track or a dot opens that deployment.
