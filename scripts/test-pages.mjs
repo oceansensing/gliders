@@ -187,6 +187,50 @@ section('the figures are styled after they are cloned');
     /\.leaflet-container\s*\{/.test(css) && /overflow:\s*hidden/.test(css));
 }
 
+section('every figure title is styled the same way');
+
+{
+  /* The map's title wore `.eyebrow` — mono, uppercase, muted, small — while
+     every plot's wore an `h3`, so two figures side by side looked like a
+     caption beside a heading. One class now, and it is global rather than
+     scoped because the section figures are clones. */
+  const doc = parse('deployment/index.html');
+  const titles = [...doc.querySelectorAll('.figure-title')];
+  ok('every figure has one', titles.length >= 4, `${titles.length} titles`);
+  ok('the map’s title is one of them',
+    titles.some((t) => t.textContent.trim() === 'Track'));
+  ok('and so is the T–S diagram’s',
+    titles.some((t) => t.textContent.trim() === 'T–S diagram'));
+  ok('none of them is still an eyebrow',
+    titles.every((t) => !t.classList.contains('eyebrow')));
+
+  /* `.eyebrow` uppercases, which would turn the section titles' "σ₀" into
+     "Σ₀" and "kg/m³" into "KG/M³" — a style that corrupts the symbols it
+     displays is not available here. */
+  ok('the shared title style does not transform case',
+    !/\.figure-title\s*\{[^}]*text-transform/.test(ALL_CSS));
+  ok('and it is defined once, globally',
+    /\.figure-title\s*\{[^}]*font-size/.test(ALL_CSS));
+
+  /**
+   * The map's caption must carry the same margins as a figure's head, or the
+   * two titles beside each other sit on different lines.
+   *
+   * `global.css` gives `.topline` a top margin of `--space-md`, written for
+   * a caption above a full-width map; a `PlotFigure`'s head has none. The
+   * component's rule first overrode only `margin-block-end`, which left the
+   * top margin in place and put "Track" exactly 20 px below "T–S diagram".
+   * jsdom does no layout, so this is checked as the rule rather than as the
+   * offset.
+   */
+  ok('the map caption sets both margins, not just the end',
+    /\.topline[^{]*\{[^}]*margin-block:\s*0/.test(ALL_CSS));
+
+  /* Still subordinate to the heading for a *group* of figures. */
+  const h2 = doc.querySelector('h2');
+  ok('group headings are still h2', h2 !== null && /Sections|Profiles/.test(h2.textContent));
+}
+
 section('the window controls');
 
 {

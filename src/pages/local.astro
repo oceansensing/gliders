@@ -50,7 +50,7 @@ import { LAB } from '../config';
       <section class="pair">
         <figure class="map-figure">
           <figcaption class="topline">
-            <span class="eyebrow">Track</span>
+            <h3 class="figure-title">Track</h3>
             <span class="mono muted">coloured by time</span>
           </figcaption>
           <div class="map" data-map role="application" aria-label="Glider track"></div>
@@ -211,11 +211,26 @@ import { LAB } from '../config';
     background: var(--bg-subtle);
   }
 
+  /**
+   * **The map's caption matches the figure's head, margins included.**
+   *
+   * `global.css` gives `.topline` a top margin of `--space-md`, written for
+   * a caption above a full-width map. Beside a `PlotFigure`, whose head has
+   * none, that put "Track" exactly 20 px below "T–S diagram" — two titles
+   * that are peers, sitting on different lines. Overriding only
+   * `margin-block-end`, as this rule first did, left the top margin in place
+   * and the misalignment with it.
+   *
+   * The end margin matches the head's too, so the map's top edge lands level
+   * with the plot's.
+   */
   .topline {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    margin-block-end: var(--space-2xs);
+    gap: var(--space-sm);
+    margin-block: 0 var(--space-xs);
+    flex-wrap: wrap;
   }
 
   .chips {

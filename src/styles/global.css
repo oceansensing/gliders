@@ -191,6 +191,33 @@ kbd {
   margin-block-end: var(--space-2xs);
 }
 
+/**
+ * The title of one figure — the map's, the T–S diagram's, each section's,
+ * each profile's.
+ *
+ * Here rather than in each component because a figure title written three
+ * times is a figure title in three styles, which is what this page had: the
+ * map wore `.eyebrow` (mono, uppercase, muted, small) while every plot wore
+ * an `h3` (sans, large, full colour), so two peers sitting side by side
+ * looked like a caption beside a heading.
+ *
+ * **Mixed case, not the eyebrow's uppercase**, and that is forced rather
+ * than chosen: `text-transform: uppercase` turns the section titles' "σ₀"
+ * into "Σ₀" and "kg/m³" into "KG/M³". A style that corrupts the symbols it
+ * displays is not available.
+ *
+ * Kept below `h2`, which stays the heading for a *group* of figures —
+ * "Sections", "Profiles" — so the hierarchy still reads.
+ */
+.figure-title {
+  font-size: var(--text-lg);
+  font-weight: 650;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+  color: var(--text);
+  margin: 0;
+}
+
 /* -- shared controls ----------------------------------------------------- */
 
 /* The chrome the figures and the browser page share. Here rather than in

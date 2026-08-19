@@ -21,7 +21,7 @@ const { title, id, hint } = Astro.props;
 
 <figure class="plot" data-figure={id}>
   <figcaption class="head">
-    <h3>{title}</h3>
+    <h3 class="figure-title">{title}</h3>
     <p class="hover mono" data-plot-hover aria-live="off"></p>
   </figcaption>
 
@@ -120,8 +120,9 @@ const { title, id, hint } = Astro.props;
     margin-block-end: var(--space-xs);
   }
 
+  /* Size and weight come from `.figure-title` in global.css, which every
+     figure on the site shares; only the head's layout is this figure's. */
   h3 {
-    font-size: var(--text-lg);
     flex: 0 1 auto;
     min-width: 0;
   }
