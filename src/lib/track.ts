@@ -21,6 +21,7 @@ import L from 'leaflet';
    than by each page that shows one, so a new page cannot forget it. */
 import 'leaflet/dist/leaflet.css';
 import { robustRange, sample } from '@c4po/plot';
+import { mainRuns, swimRuns } from './tracks.ts';
 
 export interface TrackOptions {
   /** Colormap for the time axis. */
@@ -242,35 +243,62 @@ export function makeTrack(element: HTMLElement, options: TrackOptions = {}): Tra
     const stride = Math.max(1, Math.floor((points.length - 1) / want));
     const cmap = colour?.colormap ?? next.colormap ?? options.map ?? 'cmo.thermal';
 
-    const all: L.LatLngExpression[] = [];
-    for (let i = 0; i + stride < points.length; i += stride) {
-      const a = points[i];
-      const b = points[Math.min(i + stride, points.length - 1)];
-      const seg: L.LatLngExpression[] = [];
-      for (let k = i; k <= Math.min(i + stride, points.length - 1); k++) {
-        seg.push([points[k].lat, points[k].lon]);
+    /**
+     * The fixes, split into the runs the glider could have swum.
+     *
+     * A deployment's positions are whatever was filed under its id, and that
+     * can include a fix taken on the ship, a shore station, or a leg
+     * recovered and put back in somewhere else. The pen lifts across those
+     * rather than ruling a line over open ocean the vehicle never crossed —
+     * the same thing the plots do with a gap. See `cleanTrack`.
+     *
+     * Times are passed because this page has them at full rate, where the
+     * distance rule alone would never trip: consecutive fixes here can be
+     * seconds apart.
+     */
+    const runs = swimRuns(points.length, (i) => [points[i].lat, points[i].lon],
+      (i) => points[i].t);
+
+    /* Everything is drawn; the view and the end markers follow the mission.
+       See `mainRuns` — a record can open with five fixes taken at the dock. */
+    const main = mainRuns(runs);
+    const framed: L.LatLngExpression[] = [];
+    for (const run of runs) {
+      const isMain = main.includes(run);
+      for (let i = 0; i + 1 < run.length; i += stride) {
+        const last = Math.min(i + stride, run.length - 1);
+        const a = points[run[i]];
+        const b = points[run[last]];
+        const seg: L.LatLngExpression[] = [];
+        for (let k = i; k <= last; k++) seg.push([points[run[k]].lat, points[run[k]].lon]);
+        if (isMain) framed.push(...seg);
+        /* A segment whose value is missing is drawn muted rather than
+           dropped: the track is where the glider went, and a gap in one
+           sensor is not a gap in the path. */
+        const mid = [a.v, b.v].filter(Number.isFinite);
+        const t = mid.length
+          ? Math.min(1, Math.max(0,
+              ((mid.reduce((x, y) => x + y, 0) / mid.length) - lo) / (hi - lo)))
+          : NaN;
+        const colour = Number.isFinite(t) ? sample(cmap, t) : null;
+        segments.push({ points: seg as Array<[number, number]>, colour });
+        L.polyline(seg, {
+          color: colour ?? undefined,
+          className: colour ? undefined : 'track-unknown',
+          weight: 2.5,
+          opacity: 0.95,
+        }).addTo(lines);
       }
-      all.push(...seg);
-      /* A segment whose value is missing is drawn muted rather than dropped:
-         the track is where the glider went, and a gap in one sensor is not a
-         gap in the path. */
-      const mid = [a.v, b.v].filter(Number.isFinite);
-      const t = mid.length
-        ? Math.min(1, Math.max(0,
-            ((mid.reduce((x, y) => x + y, 0) / mid.length) - lo) / (hi - lo)))
-        : NaN;
-      const colour = Number.isFinite(t) ? sample(cmap, t) : null;
-      segments.push({ points: seg as Array<[number, number]>, colour });
-      L.polyline(seg, {
-        color: colour ?? undefined,
-        className: colour ? undefined : 'track-unknown',
-        weight: 2.5,
-        opacity: 0.95,
-      }).addTo(lines);
     }
 
-    const first = points[0];
-    const last = points[points.length - 1];
+    /* The ends of what was swum, not of what was filed: a bad last fix would
+       otherwise put "last report" in an ocean the glider was never in. */
+    const head = main.length ? main[0][0] : 0;
+    const tail = main.length
+      ? main[main.length - 1][main[main.length - 1].length - 1]
+      : points.length - 1;
+    const first = points[head];
+    const last = points[tail];
     L.circleMarker([first.lat, first.lon], {
       radius: 5, weight: 2, className: 'track-start',
     }).bindTooltip('deployed').addTo(ends);
@@ -279,7 +307,7 @@ export function makeTrack(element: HTMLElement, options: TrackOptions = {}): Tra
     }).bindTooltip('last report').addTo(ends);
 
     endPoints = { first: [first.lat, first.lon], last: [last.lat, last.lon] };
-    bounds = L.latLngBounds(all);
+    bounds = L.latLngBounds(framed);
     fit();
   }
 

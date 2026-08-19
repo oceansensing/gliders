@@ -262,8 +262,121 @@ reader chose anything.
 A dot at the centre of a bounding box says a glider was somewhere in the
 Mid-Atlantic; the path says it ran the shelf break for eleven days. A whole
 mission at one fix per six hours is **3 KB and about a fifth of a second**, so
-the expensive part is the number of requests: fetched for what is on screen,
-capped at 60, six at a time, with the cap printed.
+the expensive part is the number of requests.
+
+### The archive is baked; only what is still moving is fetched
+
+A finished mission's path never changes again, and there are 2,481 of them.
+That is not a request anyone should make of somebody else's server to draw a
+background map, so it is made once at build time and served from here.
+
+| | |
+|---|---|
+| a cold bake of the whole archive | 2,481 requests, **22 s** at six at a time |
+| what it produces | 513,311 fixes, **4.3 MB** raw |
+| what is actually served | **~1.4 MB** brotli, largest shard 162 KB |
+| the whole archive on screen | **1.4 s** from the click |
+
+**Split by the year the mission started**, which is the axis the reader
+already filters on: looking at 2019 loads 2019. It also keeps a re-bake honest
+in git — a year that has ended is a file that will never be written again — and
+that is the reason this lives in `public/data/tracks/` rather than in a
+separate data repository. At 1.4 MB with only the current year churning, a
+second repo would buy a cross-origin fetch and a sync problem and nothing else.
+
+**Positions as deltas between fixed-point integers**, hundredths of a
+millidegree. A glider moves about 6 km between fixes, so the deltas are
+three-digit numbers where the positions are seven-digit ones, and that is the
+whole trick. Measured, projected to the archive: pairs at 4 dp 1.98 MB,
+delta-encoded **1.59 MB**, deltas at 1e-3 1.15 MB, deltas simplified to 555 m
+0.97 MB. The last two were not taken — a coarser grid and a dropped point are
+both a *different track* from the one the deployment page draws.
+
+**Archived only.** A glider still reporting grows a few fixes a day, so a
+baked path would show it stopped. Those are fetched live, every visit. A
+missing shard, an unbaked year, a mission that finished since the last bake —
+each falls through to the DAC, which is where all of it came from before.
+
+Refresh with `npm run data:tracks`; it re-fetches only what has changed. It is
+**not** run in CI, for the same reason `check:vendored` is not: a deploy should
+not depend on somebody else's server answering.
+
+### What a position record says, and what a glider can do
+
+Drawn straight from the DAC the map grew long straight lines across open
+ocean — the Gulf of Mexico to the mid-Atlantic and back, Cape Cod to Oregon.
+A deployment's dataset is whatever was filed under that id, which can include
+a fix taken while the vehicle was on a ship, a shore station, a leg recovered
+and redeployed elsewhere, or a corrupt GPS record.
+
+**The rule is a distance between consecutive fixes, and the number is 20 km.**
+A glider under its own power makes about 25 km a day, so 20 km between
+six-hourly fixes — 80 km/day — is something other than the vehicle swimming.
+Across all 510,831 steps in the archive:
+
+| median | p90 | p99 | p99.9 | worst |
+|---|---|---|---|---|
+| 4.4 km | 7.8 | 17.4 | 35.6 | **9,295** |
+
+20 km sits just above the 99th percentile and takes 3,471 steps, 0.68%, across
+449 missions. **16.3% of missions come out in more than one run**; the ones
+that lose the most are Spray gliders and `silbo` on its Atlantic crossings,
+which ride currents strong enough to do 20 km in six hours for real. They are
+drawn as several runs instead of one, which is the conservative direction to
+be wrong in: no position is moved or hidden, the map simply stops asserting a
+line it cannot support. A second rule, **3 m/s**, applies wherever the times
+are known — the deployment page draws fixes seconds apart, where a distance
+rule would never trip.
+
+Both **break the line rather than bridge it**, which is what the plots do with
+a gap and for the same reason. A fix unreachable from *both* neighbours while
+they are reachable from each other is dropped outright: that is one wrong
+position, not a vehicle that went somewhere. Of the 233 steps over 50 km, 17
+are that shape.
+
+The end marker takes the end of the last *run*, not of the record — otherwise
+the one mark claiming to say where the glider is sits in an ocean it was never
+in. `test:tracks` re-derives the whole thing from the committed shards and
+asserts no drawn step exceeds the cap: the longest is 20.0 km against a raw
+worst of 9,295.
+
+**And a run holding under 2% of a mission's fixes does not set the view.**
+`gp_276-20231024T0345-delayed` is a Station Papa glider whose record opens
+with five fixes off Cape Cod — the institution's dock, three thousand miles
+from the water it flew in — before 671 in the Gulf of Alaska. Breaking the
+line stopped the map ruling a route across North America, but the page still
+opened zoomed out to fit both, with "deployed" pinned to Massachusetts. Every
+fix is still drawn; `mainRuns` decides only what the view frames and where the
+two end markers go, which is a question about the mission rather than about
+the record.
+
+### How many are drawn
+
+The cap was 60 because every track was a request, and it bit in the worst
+possible place: the default sort is most-recent-first, so turning "Active
+only" off drew the sixty *newest* tracks, which were already on screen. The
+archive had dots and nothing else.
+
+With the data local the limit is drawing, and it is bounded by the **total**
+rather than per track. A track is cut into stretches so its colour can change
+along it; `SEGMENT_BUDGET` is 2,400 stretches shared out among however many
+runs are up — 40 each at sixty missions, one each at 2,500. That works because
+the thing being given up disappears at the same rate: the colour is one
+absolute clock shared by every track on screen, so with the whole archive up
+that clock spans two decades and each mission is already essentially one
+colour. Measured with 2,526 tracks and 9,512 SVG paths on screen: **no long
+task at all** through six zooms, and 211 ms for a full re-sort and redraw.
+
+**Redraws are coalesced on a timer, not `requestAnimationFrame`.** A
+background tab never runs one, so every track loaded and none of them drawn —
+found by measuring exactly that, and the same trap that turned off Leaflet's
+tile fade one layer up.
+
+**A dot for a finished mission shrinks when there are many.** At full size,
+2,481 of them buried the tracks they used to stand in for; the US east coast
+and the Gulf went solid. It shrinks rather than going away, because it is
+still the only thing saying which end of a path is the recent one. A glider
+still reporting keeps full size whatever else is on screen.
 
 **The colour is one absolute clock shared by every track**, not each mission's
 own span. That is what makes the map answer "when": two gliders out the same
@@ -275,12 +388,13 @@ the reader cannot see means nothing.
 bounding-box centre until then. A track has two ends and nothing on it says
 which is recent, and "where is it now" is the question the map is opened with.
 
-**Archived tracks are cached in `localStorage`, and only archived ones.** A
-mission still reporting grows every few hours, so a cached path would show a
-glider that had stopped moving. The entry is keyed on the last-report time as
-well as the id, so a deployment that reported again invalidates itself.
-Coordinates are rounded to four decimals — eleven metres, far finer than a
-six-hour fix, a third of the bytes.
+**`localStorage` still caches what the shards do not**, and only archived
+missions: one that finished since the last bake, or a shard that failed to
+load. The entry is keyed on the last-report time as well as the id, so a
+deployment that reported again invalidates itself — the same key the baked
+shards carry, for the same reason. Coordinates are rounded to four decimals,
+and the path is cached **raw**: what to draw of it is a rule that has changed
+once already and should not invalidate a cache when it changes again.
 
 ### The marker is coloured against the basemap, not against the theme
 
@@ -449,14 +563,17 @@ between the code and its check. All offline; fixtures in `scripts/fixtures/`.
 | `test:teos10` | the thermodynamics, against GSW's own answers |
 | `test:erddap` | query construction, streaming parse, 404-means-empty, the bin ladder, QC |
 | `test:plot` | windows vs rescaling, reported decimation, robust limits, the underlay, colormap names |
+| `test:tracks` | the baked archive's codec and shape, and — against all 2,476 committed missions — that no drawn step exceeds what a glider can swim |
 | `test:derive` | both paths end to end, physical floors, label collisions, the real Slocum fixture |
 | `test:pages` | the base path, the CSP, and every CSS rule jsdom cannot see |
-| `test:contrast` | every colour pair that ships |
+| `test:contrast` | every colour pair that ships, and the map's markers against the basemap |
 | `check:docs` | that a new package, suite or page cannot land undocumented |
 
-`npm run verify` chains build, type-check, the doc gate and all six suites —
-about 320 checks. `check:vendored` is run by hand: it compares the copied
-packages against the source repository, which is not present in CI.
+`npm run verify` chains build, type-check, the doc gate and all seven suites —
+about 450 checks. Two things are run by hand, both because a deploy should not
+depend on somebody else's machine answering: `check:vendored` compares the
+copied packages against the source repository, and `data:tracks` re-bakes the
+archive from the DAC.
 
 **A gate that depends on a bundler's size heuristic fails for the wrong
 reason.** Astro inlines a small stylesheet into the page and emits a larger one

@@ -14,15 +14,17 @@
     "check": "astro check",
     "astro": "astro",
     "data:deployments": "node scripts/fetch-deployments.mjs",
+    "data:tracks": "node scripts/fetch-tracks.mjs",
     "check:docs": "node scripts/check-docs.mjs",
     "check:vendored": "node scripts/check-vendored.mjs",
     "test:teos10": "node scripts/test-teos10.mjs",
     "test:erddap": "node scripts/test-erddap.mjs",
     "test:plot": "node scripts/test-plot.mjs",
+    "test:tracks": "node scripts/test-tracks.mjs",
     "test:derive": "node scripts/test-derive.mjs",
     "test:contrast": "node scripts/test-contrast.mjs",
     "test:pages": "node scripts/test-pages.mjs",
-    "verify": "npm run build && npm run check && npm run check:docs && npm run test:teos10 && npm run test:erddap && npm run test:plot && npm run test:derive && npm run test:contrast && npm run test:pages"
+    "verify": "npm run build && npm run check && npm run check:docs && npm run test:teos10 && npm run test:erddap && npm run test:plot && npm run test:tracks && npm run test:derive && npm run test:contrast && npm run test:pages"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.3.0",

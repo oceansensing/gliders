@@ -19,10 +19,16 @@ gates the deploy and runs entirely offline.
   fallback.
 - Search over id/title/institution, year filter, active-only toggle, sortable
   table, 300 rows at a time with the remainder counted.
-- **Real mission tracks** on the map, one fix per six hours, coloured on one
-  absolute clock shared by all of them, capped at 60 and fetched six at a
-  time. Archived tracks cached in `localStorage`.
-- A dot at each glider's last known position, styled active vs archived.
+- **Every mission's track**, one fix per six hours, coloured on one absolute
+  clock shared by all of them. The 2,481 archived ones are baked into
+  `public/data/tracks/` — one shard per start year, ~1.4 MB compressed for the
+  lot — and loaded a year at a time; only what is still reporting is fetched
+  from the DAC.
+- **Positions the glider could not have swum are not drawn.** 20 km between
+  consecutive fixes; the line breaks rather than crossing an ocean, and a
+  single bad fix is dropped.
+- A dot at each glider's last known position, styled active vs archived, and
+  shrunk when the archive is up so it does not bury the tracks.
 - Clicking a track or a dot opens that deployment.
 
 ### The deployment page (`/deployment/?dataset=<id>`)
@@ -52,8 +58,9 @@ gates the deploy and runs entirely offline.
 ### Throughout
 
 - Publication-quality PNG export from every figure and the map.
-- Light/dark theme, WCAG AA on every shipped colour pair.
-- ~295 offline checks across six suites.
+- Light/dark theme, WCAG AA on every shipped colour pair, and the map's
+  markers measured against the basemap rather than the page.
+- ~455 offline checks across seven suites.
 
 ---
 
@@ -67,30 +74,35 @@ gates the deploy and runs entirely offline.
 | Query-string state, no router | 2,534 datasets and more weekly. A view is a link. |
 | No framework | Vanilla TS in component scripts, matching oceansensing.github.io. The heaviest thing on the page is the data. |
 | Tests are plain Node scripts | Type stripping runs them against the sources; a runner needing its own transform would put a build between the code and its check. |
+| The baked tracks live in this repo, not a `glider-data` one | 4.3 MB raw, ~1.4 MB compressed, sharded by start year so only the current year is ever rewritten. A second repo would add a cross-origin fetch, a second deploy and a sync problem, and save nothing at that size. Revisit if the bake ever carries per-fix timestamps or full-rate paths. |
 
 ---
 
 ## Open, roughly in order of value
 
-### The 60-track cap interacts badly with the default sort
+### Re-baking the archive is a manual step
 
-Tracks are drawn for the first 60 of whatever is shown, and the default sort
-is most-recent-first — so with "Active only" off, the archived tracks that
-draw are still the recent ones, and the multi-year colour spread only appears
-once the reader filters by year or re-sorts. The cap is printed, so this is
-honest rather than hidden, but it is not what someone browsing the archive
-expects.
+`npm run data:tracks` is run by hand and its output committed, the way
+`data:deployments` is. It is incremental — a re-bake fetches only the missions
+that have finished since the last one and rewrites only the shards they fall
+in — so the natural next step is a scheduled Action that runs it weekly and
+opens a commit if anything changed. Deliberately not wired into the deploy:
+a build should not fail because somebody else's server is down.
 
-Options: fetch a coarser track (one fix per day) for a much larger set;
-sample across the shown set rather than taking the first 60; or drive the
-tracks from the map's viewport instead of the table's order.
+Until it is scheduled, a mission that finished since the last bake is fetched
+live by each reader and cached in their `localStorage`, which is correct but
+is one request per reader.
 
-### No server-side track cache
+### The 20 km rule splits some legitimate tracks
 
-Every visitor fetches the same archived tracks from the DAC. A build-time
-job could bake a coarse track per deployment into a static file, the way
-`public/data/deployments.json` bakes the catalog — turning 60 requests into
-one. Worth it only if the site gets real traffic.
+16.3% of missions come out in more than one run, and the ones that lose the
+most steps are Spray gliders and `silbo` on its Atlantic crossings — vehicles
+riding currents strong enough to cover 20 km in six hours for real. The rule
+is deliberately conservative and nothing is hidden or moved, but a
+time-aware version (the 3 m/s speed rule already applies where the times are
+known) would keep those whole if the six-hourly timestamps were baked too.
+Measured cost of baking them: the time deltas are almost all exactly 21600,
+so they compress to very little.
 
 ### The profile explorer lost its full-rate button
 

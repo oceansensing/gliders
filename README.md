@@ -15,10 +15,15 @@ seawater properties are computed from TEOS-10 as you look at them.
 ### Every deployment, on one map
 
 All 2,534 deployments back to 2003, searchable by glider, institution or
-year. The map draws each mission's **actual track**, coloured on a shared
-clock so two gliders out the same season look alike and a 2019 deployment
-does not, with a dot at each glider's last known position. Click any track to
-open it.
+year. The map draws **every mission's actual track** — the whole archive, not
+a sample — coloured on a shared clock so two gliders out the same season look
+alike and a 2019 deployment does not, with a dot at each glider's last known
+position. Click any track to open it.
+
+The archived tracks are baked into this site rather than fetched from the DAC
+by every visitor. Positions no glider could have swum — a fix taken on the
+ship home, a leg redeployed a continent away — break the line instead of
+ruling one across an ocean.
 
 ### One deployment
 
@@ -69,6 +74,7 @@ suite reads a committed fixture.
 | `npm run build` | static output into `dist/` |
 | `npm run verify` | build + check + every test |
 | `npm run data:deployments` | refresh the offline catalog snapshot |
+| `npm run data:tracks` | re-bake the archived mission tracks (incremental) |
 | `npm run check:vendored` | report drift in the copied packages |
 
 ## How it is put together

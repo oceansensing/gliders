@@ -294,6 +294,10 @@
   } from '@c4po/erddap';
   import { sample } from '@c4po/plot';
   import { withBase } from '../lib/url';
+  import {
+    INDEX_PATH, cleanTrack, decodeTrack, mainRuns, shardPath, trackYear,
+    type TrackIndex, type TrackShard,
+  } from '../lib/tracks';
 
   const root = document.querySelector<HTMLElement>('[data-browser]')!;
   const search = root.querySelector<HTMLInputElement>('[data-search]')!;
@@ -313,6 +317,15 @@
   const PAGE = 300;
 
   let all: DeploymentSummary[] = [];
+  /** The catalog by id. A baked track carries the last report it was baked
+      at, and only the catalog knows the current one, so the shard reader
+      needs to look each mission up. */
+  const byId = new Map<string, DeploymentSummary>();
+  function setCatalog(list: DeploymentSummary[]): void {
+    all = list;
+    byId.clear();
+    for (const d of list) byId.set(d.id, d);
+  }
   let shown: DeploymentSummary[] = [];
   let sortKey: 'title' | 'institution' | 'start' | 'end' | 'days' = 'end';
   let sortDir = -1;
@@ -471,10 +484,33 @@
    * within a season; across the whole archive the span is decades and each
    * mission arrives as essentially one colour, which is the point.
    */
-  const TRACK_CAP = 60;
+  /**
+   * **How many tracks are drawn, and why it is no longer sixty.**
+   *
+   * It was sixty because every one of them was a request to the DAC, and the
+   * archive is 2,534 deployments. That made the cap bite in the one place it
+   * was least wanted: the default sort is most-recent-first, so turning
+   * "Active only" off drew the sixty *newest* tracks, which are the ones
+   * already on screen — the archive had dots and nothing else, whatever the
+   * reader filtered to.
+   *
+   * With the archive baked into this site the data is no longer the limit,
+   * and what is left is drawing. The cap is above the size of the catalog so
+   * it does not bite at all today; `SEGMENT_BUDGET` is what actually bounds
+   * the work, and it bounds it by the total rather than per track.
+   */
+  const TRACK_CAP = 3000;
   const TRACK_EVERY = '6hours';
   const TRACK_COLORMAP = 'cmo.thermal';
-  const tracks = new Map<string, Array<[number, number]>>();
+  /**
+   * Each mission's path, already split into the runs it could have swum.
+   *
+   * Cleaned once, where it arrives, rather than on every redraw: the rule is
+   * a great-circle distance per step, and half a million of those on every
+   * sort of the table would cost more than drawing does. See `cleanTrack` in
+   * `lib/tracks.ts` for what it removes and why.
+   */
+  const tracks = new Map<string, Array<Array<[number, number]>>>();
   let trackRun = 0;
 
   /**
@@ -553,9 +589,85 @@
     }
   }
 
+  /**
+   * The archive, read from this site rather than from the DAC.
+   *
+   * A finished mission's path never changes, so it is baked at build time
+   * into one file per start year — see `lib/tracks.ts` and
+   * `scripts/fetch-tracks.mjs`. The whole archive is 2,481 missions and about
+   * 1.4 MB compressed, split so that looking at one year costs one shard.
+   *
+   * **What this replaces**: 2,481 requests to somebody else's server, per
+   * reader, per visit, to draw a background map. What it does not replace is
+   * a mission still reporting — that one is fetched live, every time, because
+   * a baked path would show a glider that had stopped moving.
+   *
+   * Missing shards are not an error. A build with no baked data, a year that
+   * has not been baked yet, a mission that finished since the last bake —
+   * each simply falls through to the DAC, which is where the data was coming
+   * from before any of this existed.
+   */
+  const shards = new Map<number, Promise<void>>();
+  let shardIndex: Promise<TrackIndex | null> | null = null;
+
+  function trackArchive(): Promise<TrackIndex | null> {
+    shardIndex ??= fetch(withBase(`/${INDEX_PATH}`))
+      .then((r) => (r.ok ? r.json() as Promise<TrackIndex> : null))
+      .catch(() => null);
+    return shardIndex;
+  }
+
+  /** Pull in whatever shards the visible archived missions fall into, and
+      resolve once they are all in — so the DAC pass below asks only for what
+      is genuinely not baked. */
+  async function loadShards(list: DeploymentSummary[]): Promise<void> {
+    /* Asked for before the index is, so the default view — active only —
+       fetches nothing at all from here. */
+    const years = new Set<number>();
+    for (const d of list) {
+      if (isActive(d) || tracks.has(d.id)) continue;
+      years.add(trackYear(d.start));
+    }
+    if (!years.size) return;
+
+    const index = await trackArchive();
+    if (!index) return;
+    const have = new Set(index.years.map((y) => y.year));
+    const want = new Set([...years].filter((y) => have.has(y)));
+
+    for (const year of want) {
+      if (shards.has(year)) continue;
+      shards.set(year, fetch(withBase(`/${shardPath(year)}`))
+        .then((r) => (r.ok ? r.json() as Promise<TrackShard> : null))
+        .then((shard) => {
+          if (!shard) return;
+          for (const [id, baked] of Object.entries(shard.tracks)) {
+            /* Keyed on the last report, exactly as the `localStorage` cache
+               is: a deployment that was archived when it was baked and has
+               reported again since is a different path, and the baked one
+               would be wrong rather than merely old. `byId` is the catalog,
+               which is the only thing that knows the current one. */
+            const d = byId.get(id);
+            if (!d || baked.end !== Math.round(d.end)) continue;
+            if (!tracks.has(id)) {
+              tracks.set(id, cleanTrack(decodeTrack(baked.p, shard.precision)));
+            }
+          }
+        })
+        .catch(() => { /* falls through to the DAC, which is the old path */ }));
+    }
+
+    await Promise.all([...want].map((y) => shards.get(y)));
+  }
+
   async function loadTracks(list: DeploymentSummary[]): Promise<void> {
     const run = ++trackRun;
     const want = list.slice(0, TRACK_CAP);
+
+    await loadShards(want);
+    if (run !== trackRun) return;
+    scheduleDraw();
+
     let next = 0;
 
     const worker = async (): Promise<void> => {
@@ -566,8 +678,8 @@
         if (!tracks.has(d.id)) {
           const cached = cacheGet(d);
           if (cached) {
-            tracks.set(d.id, cached);
-            if (run === trackRun) { drawTracks(); drawMarkers(); }
+            tracks.set(d.id, cleanTrack(cached));
+            if (run === trackRun) scheduleDraw();
             continue;
           }
           try {
@@ -580,12 +692,22 @@
             });
             const lat = columns.get('latitude')!;
             const lon = columns.get('longitude')!;
+            const secs = columns.get('time')!;
             const path: Array<[number, number]> = [];
+            /* Kept alongside so the speed rule has something to work with:
+               a live fetch knows when each fix was taken, and the archive —
+               which does not carry the seconds — falls back to distance. */
+            const when: number[] = [];
             for (let i = 0; i < rows; i++) {
-              if (Number.isFinite(lat[i]) && Number.isFinite(lon[i])) path.push([lat[i], lon[i]]);
+              if (Number.isFinite(lat[i]) && Number.isFinite(lon[i])) {
+                path.push([lat[i], lon[i]]);
+                when.push(secs[i]);
+              }
             }
-            tracks.set(d.id, path);
+            /* Cached raw. The rule that splits it is a drawing decision and
+               belongs where it can be changed without invalidating a cache. */
             cachePut(d, path);
+            tracks.set(d.id, cleanTrack(path, when));
           } catch {
             /* A deployment whose positions cannot be read keeps its marker
                and no track. Not worth a message: the dot is still there and
@@ -595,12 +717,12 @@
         }
         /* Both: a deployment's dot steps aside once its path is drawn, and
            that only happens if the markers are repainted too. */
-        if (run === trackRun) { drawTracks(); drawMarkers(); }
+        if (run === trackRun) scheduleDraw();
       }
     };
 
     await Promise.all(Array.from({ length: 6 }, worker));
-    if (run === trackRun) flushCache();
+    if (run === trackRun) { scheduleDraw(); flushCache(); }
   }
 
   /** The clock every track is coloured against: the span of what is shown. */
@@ -614,30 +736,95 @@
     return Number.isFinite(lo) && hi > lo ? { lo, hi } : { lo: 0, hi: 1 };
   }
 
+  /**
+   * Redraws coalesced to one a frame.
+   *
+   * Tracks arrive one at a time from the DAC and a shard at a time from here,
+   * and each arrival used to repaint every track on the map. At sixty that
+   * was invisible; at two thousand it is the same work two thousand times,
+   * and the tab stops answering the pointer while it happens.
+   *
+   * **Not `requestAnimationFrame`.** A background tab never runs one, so a
+   * reader who opens the page in a second tab and comes back finds every
+   * track loaded and none of them drawn — the same trap that turned off
+   * Leaflet's tile fade, one layer up. A timer runs either way; a background
+   * tab merely throttles it, which is the correct behaviour for a repaint
+   * nobody is looking at.
+   */
+  let drawPending: ReturnType<typeof setTimeout> | 0 = 0;
+  function scheduleDraw(): void {
+    if (drawPending) return;
+    drawPending = setTimeout(() => {
+      drawPending = 0;
+      drawTracks();
+      drawMarkers();
+      say();
+    }, 16);
+  }
+
+  /**
+   * How finely each track is cut, given how many are on screen.
+   *
+   * A track is drawn as a run of short polylines so its colour can change
+   * along it — that gradient is what makes the direction of travel readable.
+   * The cost is one SVG path per stretch, so forty stretches times two
+   * thousand missions is eighty thousand paths, and the map stops being a
+   * map.
+   *
+   * The budget is on the total, and it works out because **the thing being
+   * given up disappears at exactly the same rate**. The colour runs over one
+   * absolute clock shared by every track on screen, so with the whole archive
+   * up that clock spans two decades and each mission is essentially one
+   * colour already — a gradient along it would be indistinguishable from a
+   * flat line. Filtered down to a season, the span is weeks, the gradient
+   * carries real information, and there is budget for all forty.
+   */
+  const SEGMENT_BUDGET = 2400;
+  const segmentsPer = (n: number): number =>
+    Math.max(1, Math.min(40, Math.round(SEGMENT_BUDGET / Math.max(1, n))));
+
   function drawTracks(): void {
     trackLayer.clearLayers();
     const { lo, hi } = trackSpan();
-    for (const d of shown.slice(0, TRACK_CAP)) {
-      const path = tracks.get(d.id);
-      if (!path || path.length < 2) continue;
+    const list = shown.slice(0, TRACK_CAP);
+    let runCount = 0;
+    for (const d of list) runCount += tracks.get(d.id)?.length ?? 0;
+    const cuts = segmentsPer(runCount);
 
-      /* One polyline per stretch so the colour can change along it, which is
-         what makes the direction of travel readable. They are drawn only —
-         the whole path shares one invisible hit line below. */
-      const step = Math.max(1, Math.floor(path.length / 40));
+    for (const d of list) {
+      const runs = tracks.get(d.id);
+      if (!runs || !runs.length) continue;
+
+      /* A mission's fixes come as one or more runs — see `cleanTrack`. Where
+         it was carried rather than swimming, the pen lifts: the position
+         either side is real and the line between them is not. */
+      const total = runs.reduce((n, r) => n + r.length, 0);
       const span = d.end > d.start ? d.end - d.start : 1;
-      for (let i = 0; i + step < path.length; i += step) {
-        const seg = path.slice(i, Math.min(i + step + 1, path.length));
-        /* Where this stretch falls on the shared clock: the mission's own
-           position in it, plus how far along the mission the stretch is. */
-        const at = d.start + ((i + step / 2) / Math.max(1, path.length - 1)) * span;
-        const t = Math.min(1, Math.max(0, (at - lo) / (hi - lo)));
-        L.polyline(seg, {
-          color: sample(TRACK_COLORMAP, t),
-          weight: isActive(d) ? 2.5 : 1.8,
-          opacity: isActive(d) ? 0.95 : 0.65,
-          interactive: false,
-        }).addTo(trackLayer);
+      let before = 0;
+
+      for (const path of runs) {
+        /* One polyline per stretch so the colour can change along it, which
+           is what makes the direction of travel readable. They are drawn
+           only — the whole path shares one invisible hit line below.
+           The stride divides the *gaps*, not the points, and the loop runs
+           while a gap is left: at one stretch that has to come out as the
+           whole path rather than as nothing, which dividing the points does. */
+        const step = Math.max(1, Math.ceil((path.length - 1) / cuts));
+        for (let i = 0; i + 1 < path.length; i += step) {
+          const seg = path.slice(i, Math.min(i + step + 1, path.length));
+          /* Where this stretch falls on the shared clock: the mission's own
+             position in it, plus how far along the mission the stretch is.
+             Counted over every run, so a break does not restart the clock. */
+          const at = d.start + ((before + i + step / 2) / Math.max(1, total - 1)) * span;
+          const t = Math.min(1, Math.max(0, (at - lo) / (hi - lo)));
+          L.polyline(seg, {
+            color: sample(TRACK_COLORMAP, t),
+            weight: isActive(d) ? 2.5 : 1.8,
+            opacity: isActive(d) ? 0.95 : 0.65,
+            interactive: false,
+          }).addTo(trackLayer);
+        }
+        before += path.length;
       }
 
       /**
@@ -648,8 +835,13 @@
        * *target* without widening the mark is the standard answer, and doing
        * it once per track rather than per segment keeps the interactive
        * layer count at one per mission instead of forty.
+       *
+       * Leaflet takes an array of arrays as a multi-polyline, so a mission
+       * broken into runs still costs exactly one interactive layer — and the
+       * target follows the runs rather than bridging them, so the reader
+       * cannot click a line that is not drawn.
        */
-      const hit = L.polyline(path, {
+      const hit = L.polyline(runs, {
         color: '#000',
         opacity: 0,
         weight: 14,
@@ -664,11 +856,26 @@
 
   function drawMarkers(): void {
     markers.clearLayers();
-    /* Markers for what the table is showing, capped: 2,500 circles is a
-       slideshow, and a map of every deployment ever is not a question
-       anybody asks. The status line says when the cap bit. */
-    const CAP = 500;
-    const subset = shown.slice(0, CAP);
+    const subset = shown.slice(0, TRACK_CAP);
+
+    /**
+     * **A dot for a finished mission gets out of the way of the tracks.**
+     *
+     * Back when the archive had no paths, the dot was all an archived
+     * deployment had, and 500 of them at full size was the map. With every
+     * mission's track drawn it is the other way round: at that size, 2,481
+     * dark discs bury exactly the thing they used to stand in for — the US
+     * east coast and the Gulf went solid and the transits underneath them
+     * disappeared.
+     *
+     * It shrinks rather than going away, because it is still the only thing
+     * saying which end of a path is the recent one. A glider still reporting
+     * keeps full size whatever else is on screen: "where is it now" is the
+     * question the map is opened with, and it has an answer for exactly
+     * those.
+     */
+    const dense = subset.filter((d) => !isActive(d)).length > 150;
+
     for (const d of subset) {
       /**
        * **The dot marks where the glider is now**, or was when it last
@@ -680,8 +887,14 @@
        * deployment's bounding box until then, so the dot is on screen from
        * the first paint rather than appearing seconds later.
        */
-      const path = tracks.get(d.id);
-      const end = path && path.length ? path[path.length - 1] : null;
+      /* The end of the last run the glider actually swam. Taken from the raw
+         record it could be the bad fix itself, which would put the dot — the
+         one mark on the map claiming to say where the vehicle is — in an
+         ocean it was never in. */
+      const runs = tracks.get(d.id);
+      const main = runs?.length ? mainRuns(runs) : [];
+      const last = main.length ? main[main.length - 1] : null;
+      const end = last ? last[last.length - 1] : null;
       const lat = end ? end[0] : (d.south + d.north) / 2;
       const lon = end ? end[1] : (d.west + d.east) / 2;
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
@@ -692,23 +905,31 @@
          the radii grow to leave a body inside the ring. Whole numbers
          because Leaflet rounds the radius into the path anyway. */
       const marker = L.circleMarker([lat, lon], {
-        radius: live ? 7 : 5,
-        weight: live ? 2.5 : 2,
+        radius: live ? 7 : (dense ? 3 : 5),
+        weight: live ? 2.5 : (dense ? 1 : 2),
         className: live ? 'marker-live' : 'marker-past',
       });
-      // Built as DOM, not as an HTML string: the title and institution are
-      // written by whoever published the dataset, and this page's CSP has no
-      // `unsafe-inline` to fall back on if one of them ever contains markup.
-      const box = document.createElement('div');
-      const a = document.createElement('a');
-      a.href = link(d.id);
-      a.textContent = d.title || d.id;
-      box.append(a);
-      const meta = document.createElement('span');
-      meta.className = 'id';
-      meta.textContent = `${d.institution || 'unknown institution'} · ${date(d.start)} → ${date(d.end)}`;
-      box.append(document.createElement('br'), meta);
-      marker.bindPopup(box);
+      /* Built on open rather than up front. Two and a half thousand popups
+         is two and a half thousand detached subtrees the reader will look at
+         one of; Leaflet takes a function and calls it when one is asked for.
+
+         DOM, not an HTML string: the title and institution are written by
+         whoever published the dataset, and this page's CSP has no
+         `unsafe-inline` to fall back on if one of them ever contains
+         markup. */
+      marker.bindPopup(() => {
+        const box = document.createElement('div');
+        const a = document.createElement('a');
+        a.href = link(d.id);
+        a.textContent = d.title || d.id;
+        box.append(a);
+        const meta = document.createElement('span');
+        meta.className = 'id';
+        meta.textContent =
+          `${d.institution || 'unknown institution'} · ${date(d.start)} → ${date(d.end)}`;
+        box.append(document.createElement('br'), meta);
+        return box;
+      });
       marker.addTo(markers);
     }
   }
@@ -782,12 +1003,12 @@
    */
   async function load(): Promise<void> {
     try {
-      all = await listDatasets();
+      setCatalog(await listDatasets());
     } catch {
       try {
         const res = await fetch(withBase('/data/deployments.json'));
         const doc = await res.json() as { fetched: number; deployments: DeploymentSummary[] };
-        all = doc.deployments;
+        setCatalog(doc.deployments);
         notice = `the DAC did not answer, so this is a snapshot from ${date(doc.fetched)}`;
         fillYears();
         render();
