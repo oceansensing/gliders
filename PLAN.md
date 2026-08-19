@@ -94,13 +94,20 @@ Until it is scheduled, a mission that finished since the last bake is fetched
 live by each reader and cached in their `localStorage`, which is correct but
 is one request per reader.
 
-### The track colour is interpolated along the path, not read off the clock
+### The `days` column repeats a span the data does not fill
 
-Now that the shards carry timestamps, `drawTracks` could colour each stretch
-by when it actually happened instead of by how far along the fix index it
-sits. It matters only where a mission has gaps, and across the whole archive
-each mission is one colour anyway, so it is a small correctness win rather
-than a visible one. It needs `cleanTrack` to hand back times alongside runs.
+36 archived missions of 2,534 — 4,364 glider-days of 163,000 — carry a
+`minTime`/`maxTime` in the DAC's catalog that a stray fix has stretched.
+`cp_374-20140416T1634-delayed` is filed as 846 days and is an 86-day mission
+plus one record dated two years later.
+
+The map no longer repeats it: a gap over 30 days ends the record, so the
+stray is not drawn, does not place the dot and does not set the view. The
+table's `days` column still shows the DAC's number, on the grounds that
+rewriting another archive's metadata under its own name is worse than
+repeating it. If that call is revisited, the true extent is already in the
+baked shards for every archived mission — but not for active ones, so the
+column would be computed two ways.
 
 ### The profile explorer lost its full-rate button
 

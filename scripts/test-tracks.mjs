@@ -17,7 +17,7 @@ import { check, done, near, ok, section } from './lib/check.mjs';
 import {
   INDEX_PATH, MAX_SPEED_MS, MAX_STEP_KM, TRACK_EVERY, TRACK_PRECISION,
   TIME_UNIT, cleanTrack, decodeTimes, decodeTrack, encodeTimes, encodeTrack, mainRuns,
-  reachable, shardPath, stepKm, swimRuns, trackYear,
+  reachable, shardPath, stepKm, swimRuns, swimTrack, trackYear,
 } from '../src/lib/tracks.ts';
 
 section('the encoding');
@@ -92,10 +92,24 @@ section('how far a glider gets');
   /* What no speed test can catch, and why the distance cap has to stay: a
      vehicle flown across an ocean during a long silence looks slow. */
   ok('but a flight across an ocean during a silence is not',
-    !reachable([38, -74], [38, -30], 30 * 86400),
+    !reachable([38, -74], [38, -30], 20 * 86400),
     `${stepKm([38, -74], [38, -30]).toFixed(0)} km at `
-    + `${(stepKm([38, -74], [38, -30]) * 1000 / (30 * 86400)).toFixed(2)} m/s — `
+    + `${(stepKm([38, -74], [38, -30]) * 1000 / (20 * 86400)).toFixed(2)} m/s — `
     + 'a plausible speed, an implausible journey');
+
+  /**
+   * **A day of silence is normal operations; a month is a recovery.** A
+   * glider deployment does not go quiet for a season and resume, so past
+   * `MAX_GAP_S` the record has stopped being one deployment whatever the two
+   * ends look like. This is what separates the 86-day
+   * `cp_374-20140416T1634-delayed` from the single fix, 760 days later, that
+   * had it filed as an 846-day mission.
+   */
+  ok('a fortnight of silence still joins up',
+    reachable([38, -74], [38.05, -74], 14 * 86400));
+  ok('but two months does not, however short the step',
+    !reachable([38, -74], [38.005, -74], 60 * 86400),
+    `${stepKm([38, -74], [38.005, -74]).toFixed(1)} km — the distance is not the point`);
 }
 
 section('the clock');
@@ -190,19 +204,80 @@ section('a record split into what was swum');
   check('as indices into the original', idx[1][0], 3);
 
   /**
+   * The clock has to survive the split with the fixes it belongs to, or a
+   * stretch is coloured by when some *other* stretch happened. Dropping a bad
+   * fix is where that goes wrong most easily: the position goes and the
+   * timestamp has to go with it.
+   */
+  /* Six-hourly, because that is what the record is: a clock with the fixes
+     seconds apart would make every ordinary 4 km step read as impossible,
+     which is the speed rule working rather than a bug. */
+  const clock = [0, 21600, 43200, 64800, 86400];
+  const swum = swimTrack(spike, clock);
+  check('a run carries a clock when the record has one', swum.length, 1);
+  check('with one time per surviving fix', swum[0].at.length, swum[0].pts.length);
+  ok('and the dropped fix takes its timestamp with it',
+    !swum[0].at.includes(43200), JSON.stringify(swum[0].at));
+  ok('the times left are the ones that belong to the positions left',
+    JSON.stringify(swum[0].at) === JSON.stringify([0, 21600, 64800, 86400]),
+    JSON.stringify(swum[0].at));
+  check('and no clock means no clock',
+    swimTrack(straight)[0].at, undefined);
+
+  /**
    * `gp_276-20231024T0345-delayed`'s shape: five fixes at the institution's
    * dock off Cape Cod, then 671 in the Gulf of Alaska. Both are drawn; only
    * one of them is the mission, and it is the one the view should frame.
    */
   const dock = [Array.from({ length: 5 }, (_, i) => [41.5 + i * 0.001, -70.6]),
     Array.from({ length: 671 }, (_, i) => [47 + i * 0.001, -125])];
-  const main = mainRuns(dock);
+  const size = (r) => r.length;
+  const main = mainRuns(dock, size);
   check('a handful of dockside fixes is not the mission', main.length, 1);
   check('and the mission is the other one', main[0].length, 671);
-  check('two real legs both count', mainRuns([[1, 2, 3], [4, 5, 6]]).length, 2);
+  check('two real legs both count', mainRuns([[1, 2, 3], [4, 5, 6]], size).length, 2);
   check('and nothing is dropped when everything is small',
-    mainRuns([[1], [2], [3]]).length, 3);
-  check('an empty record is left alone', mainRuns([]).length, 0);
+    mainRuns([[1], [2], [3]], size).length, 3);
+  check('an empty record is left alone', mainRuns([], size).length, 0);
+}
+
+section('a stretch is coloured by when it happened');
+
+{
+  /**
+   * The colour runs over one absolute clock shared by every track on screen.
+   * Read off the record it is a fact; interpolated from the fix index it
+   * assumes the fixes are evenly spaced in time, and a mission with a gap in
+   * it is exactly where that assumption fails and where the colour has
+   * something to say.
+   *
+   * A mission that reported for a day, went quiet for three weeks, and came
+   * back: two thirds of its fixes are in the first day. Three weeks rather
+   * than a month deliberately — this is about colour, and a gap long enough
+   * to end the record would split it and prove nothing.
+   */
+  const day = 86400;
+  const t0 = 1_600_000_000;
+  const pts = [];
+  const at = [];
+  for (let i = 0; i < 4; i++) { pts.push([38 + i * 0.02, -74]); at.push(t0 + i * 3600 * 6); }
+  for (let i = 0; i < 2; i++) { pts.push([38.08 + i * 0.02, -74]); at.push(t0 + 21 * day + i * 3600 * 6); }
+
+  const runs = swimTrack(pts, at);
+  check('a silence short of a month keeps it one run', runs.length, 1);
+  check('with every fix', runs[0].pts.length, 6);
+
+  const span = at[at.length - 1] - t0;
+  const byClock = (i) => (runs[0].at[i] - t0) / span;
+  const byIndex = (i) => i / (pts.length - 1);
+
+  /* The last fix before the silence is under a day into a 21-day record. */
+  near('read off the clock, the pre-gap fix sits at the start', byClock(3), 0.035, 0.005);
+  near('interpolated, it sits over half way', byIndex(3), 0.6, 0.001);
+  ok('which is the whole difference',
+    Math.abs(byClock(3) - byIndex(3)) > 0.5,
+    `${(byClock(3) * 100).toFixed(1)}% of the mission's span against `
+    + `${(byIndex(3) * 100).toFixed(1)}% of its fixes`);
 }
 
 section('the shards that ship');

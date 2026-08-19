@@ -261,7 +261,7 @@ export function makeTrack(element: HTMLElement, options: TrackOptions = {}): Tra
 
     /* Everything is drawn; the view and the end markers follow the mission.
        See `mainRuns` — a record can open with five fixes taken at the dock. */
-    const main = mainRuns(runs);
+    const main = mainRuns(runs, (r) => r.length);
     const framed: L.LatLngExpression[] = [];
     for (const run of runs) {
       const isMain = main.includes(run);

@@ -295,8 +295,8 @@
   import { sample } from '@c4po/plot';
   import { withBase } from '../lib/url';
   import {
-    INDEX_PATH, cleanTrack, decodeTimes, decodeTrack, mainRuns, shardPath, trackYear,
-    type TrackIndex, type TrackShard,
+    INDEX_PATH, decodeTimes, decodeTrack, encodeTimes, mainRuns, shardPath, swimTrack,
+    trackYear, type Swum, type TrackIndex, type TrackShard,
   } from '../lib/tracks';
 
   const root = document.querySelector<HTMLElement>('[data-browser]')!;
@@ -510,7 +510,7 @@
    * sort of the table would cost more than drawing does. See `cleanTrack` in
    * `lib/tracks.ts` for what it removes and why.
    */
-  const tracks = new Map<string, Array<Array<[number, number]>>>();
+  const tracks = new Map<string, Swum[]>();
   let trackRun = 0;
 
   /**
@@ -530,7 +530,11 @@
    */
   const CACHE_KEY = 'gliders.tracks.v1';
   const CACHE_MAX = 400;
-  type Cached = Record<string, { end: number; path: number[] }>;
+  /* `t` was added when the tracks grew a clock. Optional rather than
+     versioned: an entry written before it simply has none, falls back the
+     way an unbaked shard does, and is replaced on its own schedule — which
+     is a better trade than throwing away every reader's cache. */
+  type Cached = Record<string, { end: number; path: number[]; t?: number[] }>;
 
   function readCache(): Cached {
     try {
@@ -543,7 +547,8 @@
   let cache: Cached = readCache();
   let cacheDirty = false;
 
-  function cacheGet(d: DeploymentSummary): Array<[number, number]> | null {
+  function cacheGet(d: DeploymentSummary):
+  { path: Array<[number, number]>; at?: number[] } | null {
     const hit = cache[d.id];
     /* Keyed on the last report as well as the id: a mission that was
        archived when it was cached but has since reported again is a
@@ -552,16 +557,21 @@
     if (!hit || hit.end !== Math.round(d.end)) return null;
     const path: Array<[number, number]> = [];
     for (let i = 0; i + 1 < hit.path.length; i += 2) path.push([hit.path[i], hit.path[i + 1]]);
-    return path;
+    return { path, at: decodeTimes(hit.t) };
   }
 
-  function cachePut(d: DeploymentSummary, path: Array<[number, number]>): void {
+  function cachePut(d: DeploymentSummary, path: Array<[number, number]>,
+    when?: number[]): void {
     if (isActive(d) || path.length < 2) return;
     const flat: number[] = [];
     for (const [lat, lon] of path) {
       flat.push(Math.round(lat * 1e4) / 1e4, Math.round(lon * 1e4) / 1e4);
     }
-    cache[d.id] = { end: Math.round(d.end), path: flat };
+    cache[d.id] = {
+      end: Math.round(d.end),
+      path: flat,
+      t: when && when.length === path.length ? encodeTimes(when) : undefined,
+    };
     cacheDirty = true;
   }
 
@@ -650,7 +660,7 @@
             const d = byId.get(id);
             if (!d || baked.end !== Math.round(d.end)) continue;
             if (!tracks.has(id)) {
-              tracks.set(id, cleanTrack(decodeTrack(baked.p, shard.precision),
+              tracks.set(id, swimTrack(decodeTrack(baked.p, shard.precision),
                 decodeTimes(baked.t)));
             }
           }
@@ -679,7 +689,7 @@
         if (!tracks.has(d.id)) {
           const cached = cacheGet(d);
           if (cached) {
-            tracks.set(d.id, cleanTrack(cached));
+            tracks.set(d.id, swimTrack(cached.path, cached.at));
             if (run === trackRun) scheduleDraw();
             continue;
           }
@@ -695,9 +705,9 @@
             const lon = columns.get('longitude')!;
             const secs = columns.get('time')!;
             const path: Array<[number, number]> = [];
-            /* Kept alongside so the speed rule has something to work with:
-               a live fetch knows when each fix was taken, and the archive —
-               which does not carry the seconds — falls back to distance. */
+            /* Kept alongside: the clock is what the speed rule reads, and
+               what each stretch is coloured by. A fix with no position drops
+               out of both together or every later one is timed wrong. */
             const when: number[] = [];
             for (let i = 0; i < rows; i++) {
               if (Number.isFinite(lat[i]) && Number.isFinite(lon[i])) {
@@ -705,10 +715,11 @@
                 when.push(secs[i]);
               }
             }
-            /* Cached raw. The rule that splits it is a drawing decision and
-               belongs where it can be changed without invalidating a cache. */
-            cachePut(d, path);
-            tracks.set(d.id, cleanTrack(path, when));
+            /* Cached unsplit. The rule that splits it is a drawing decision
+               and belongs where it can be changed without invalidating a
+               cache — which it has been, twice. */
+            cachePut(d, path, when);
+            tracks.set(d.id, swimTrack(path, when));
           } catch {
             /* A deployment whose positions cannot be read keeps its marker
                and no track. Not worth a message: the dot is still there and
@@ -799,11 +810,12 @@
       /* A mission's fixes come as one or more runs — see `cleanTrack`. Where
          it was carried rather than swimming, the pen lifts: the position
          either side is real and the line between them is not. */
-      const total = runs.reduce((n, r) => n + r.length, 0);
+      const total = runs.reduce((n, r) => n + r.pts.length, 0);
       const span = d.end > d.start ? d.end - d.start : 1;
       let before = 0;
 
-      for (const path of runs) {
+      for (const run of runs) {
+        const path = run.pts;
         /* One polyline per stretch so the colour can change along it, which
            is what makes the direction of travel readable. They are drawn
            only — the whole path shares one invisible hit line below.
@@ -812,11 +824,24 @@
            whole path rather than as nothing, which dividing the points does. */
         const step = Math.max(1, Math.ceil((path.length - 1) / cuts));
         for (let i = 0; i + 1 < path.length; i += step) {
-          const seg = path.slice(i, Math.min(i + step + 1, path.length));
-          /* Where this stretch falls on the shared clock: the mission's own
-             position in it, plus how far along the mission the stretch is.
-             Counted over every run, so a break does not restart the clock. */
-          const at = d.start + ((before + i + step / 2) / Math.max(1, total - 1)) * span;
+          const end = Math.min(i + step, path.length - 1);
+          const seg = path.slice(i, end + 1);
+          /**
+           * Where this stretch falls on the clock every track shares.
+           *
+           * **Read off the record when the record has a clock**, which the
+           * baked shards and a live fetch both do: the midpoint of the two
+           * fixes the stretch runs between. Otherwise it is interpolated from
+           * the fix index across the mission's start and end, which assumes
+           * the fixes are evenly spaced in time — and they are not wherever
+           * a mission has a gap, which is precisely where a mission's colour
+           * has something to say. A glider that reported for a week, went
+           * quiet for a month, and came back was drawn as though the whole
+           * mission ran at one pace.
+           */
+          const at = run.at
+            ? (run.at[i] + run.at[end]) / 2
+            : d.start + ((before + i + step / 2) / Math.max(1, total - 1)) * span;
           const t = Math.min(1, Math.max(0, (at - lo) / (hi - lo)));
           L.polyline(seg, {
             color: sample(TRACK_COLORMAP, t),
@@ -842,7 +867,7 @@
        * target follows the runs rather than bridging them, so the reader
        * cannot click a line that is not drawn.
        */
-      const hit = L.polyline(runs, {
+      const hit = L.polyline(runs.map((r) => r.pts), {
         color: '#000',
         opacity: 0,
         weight: 14,
@@ -893,8 +918,8 @@
          one mark on the map claiming to say where the vehicle is — in an
          ocean it was never in. */
       const runs = tracks.get(d.id);
-      const main = runs?.length ? mainRuns(runs) : [];
-      const last = main.length ? main[main.length - 1] : null;
+      const main = runs?.length ? mainRuns(runs, (r) => r.pts.length) : [];
+      const last = main.length ? main[main.length - 1]?.pts : null;
       const end = last ? last[last.length - 1] : null;
       const lat = end ? end[0] : (d.south + d.north) / 2;
       const lon = end ? end[1] : (d.west + d.east) / 2;

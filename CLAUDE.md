@@ -334,10 +334,10 @@ hours is 2.31 m/s: just above that, well below the artefacts. An earlier
 20 km cut — 0.93 m/s — split 16.3% of missions, and what it was splitting was
 Spray gliders and `silbo` riding the Gulf Stream for real.
 
-So two rules — over **50 km**, or over **2.5 m/s** where the times are known.
-Together: **239 steps, 0.047%, on 141 missions**, and 4.8% of missions come
-out in more than one run, against 16.3% at 20 km. Fixes dropped as single bad
-positions: 57, against 1,566.
+So three rules — over **50 km**, over **2.5 m/s** where the times are known,
+or **a gap of more than 30 days**. Together: 4.9% of missions come out in more
+than one run, against 16.3% at 20 km, and 58 fixes are dropped as single bad
+positions against 1,566.
 
 The distance cap has to stay even with a clock, because **a vehicle flown
 across an ocean during a long silence looks slow**: 4,000 km over 30 days is
@@ -345,17 +345,42 @@ across an ocean during a long silence looks slow**: 4,000 km over 30 days is
 because the deployment page draws fixes seconds apart, where no distance rule
 would ever trip.
 
+### A month of silence ends the record
+
+Past a month a glider has been recovered — a deployment does not go quiet for
+a season and resume — so the record has stopped being one deployment whatever
+its two ends look like.
+
+`cp_374-20140416T1634-delayed` is filed as **846 days**. It is 344 fixes over
+86 days in the spring of 2014, followed by **one single fix 760 days later**.
+Its sibling `cp_374-20150509T1256-delayed` is filed as 458 days and is 303
+fixes over 75; both strays are dated 2016-08-09, which is the day the third
+`cp_374` deployment ended — a batch stamp, not a position report. That one fix
+was setting the dot, the map's view, and the far end of the colour ramp.
+
+Archive-wide the rule breaks **27 steps on 24 missions**, of which 6 have two
+or fewer fixes on the far side — strays; the rest are two deployments in one
+record. A run of one is not a line, so a stray simply stops being drawn.
+
+**36 archived missions of 2,534 claim a span the data does not fill**, 4,364
+glider-days of 163,000. The catalog's `days` column still reports what the DAC
+reports, because that is what the DAC's `minTime`/`maxTime` say and rewriting
+another archive's metadata under its own name is worse than repeating it. The
+map no longer repeats it.
+
 Both **break the line rather than bridge it**, which is what the plots do with
 a gap and for the same reason. A fix unreachable from *both* neighbours while
 they are reachable from each other is dropped outright: that is one wrong
 position, not a vehicle that went somewhere.
 
-### The rule that did not survive its own measurement
+### The same rule at a day, which does not survive its own measurement
+
+Read this before anyone tightens the month.
 
 A third of the long steps are not a speed at all — 2,523 of 7,343 follow a gap
-of over nine hours — so a third rule looked obviously right: four missed
+of over nine hours — so a *day* looked like the obvious threshold: four missed
 reports and the vehicle has moved, so nobody watched it go. Breaking on *a gap
-over 24 h with more than 15 km covered* caught 474 steps the other two miss.
+over 24 h with more than 15 km covered* caught 474 steps the other rules miss.
 
 Then those 474 were measured. Median **30 km over 2.1 days, which is
 0.16 m/s**, and **434 of them slower than 0.3 m/s** — slower than a glider
@@ -364,14 +389,38 @@ swimming while the satellite link was down. It doubled the missions that split,
 118 to 292, and what it split were the fast Spray gliders it was meant to
 protect.
 
-**A long gap is evidence that nobody was watching, not evidence that anything
-happened.** It was removed — and finding that out is what the baked clock was
-worth, since without the elapsed time those 474 steps are indistinguishable
-from transport. Quantised to ten minutes, 0.30 MB across the archive against
-1.02 MB at full precision, a 1.4% error on a six-hour step. On the catalog it
-now changes 6 steps and no missions; its standing use is the deployment page,
-and the next one is colouring a track by when each stretch happened rather
-than by how far along the fix index it sits.
+**A day of silence is normal operations; a month is a recovery.** The
+threshold is not a tuning knob between two settings of one idea — they are
+different events, and only the measurement says which is which. The month
+breaks 27 steps; the day broke 474, nearly all of them wrongly.
+
+Finding that out is what the baked clock was worth: without the elapsed time
+those 474 steps are indistinguishable from transport. Quantised to ten
+minutes, 0.30 MB across the archive against 1.02 MB at full precision, a 1.4%
+error on a six-hour step.
+
+### A stretch is coloured by when it happened
+
+Colour on the catalog map runs over one absolute clock shared by every track
+on screen, and each stretch used to be placed on it by **interpolating from
+the fix index** across the mission's start and end. That assumes the fixes are
+evenly spaced in time. They are not wherever a mission has a gap — and a gap
+is exactly where a mission's colour has something to say.
+
+With the clock baked it is read off the record instead: the midpoint of the
+two fixes the stretch runs between. Measured across 2,392 missions, as a
+fraction of each mission's own span:
+
+| | disagreement |
+|---|---|
+| median mission | 0.6% |
+| **39 missions** | **over 25%** |
+| worst, before the month rule removed its stray fix | **90%** |
+
+So for most of the archive this changes nothing visible, and for the long
+sparse deployments it moves a stretch most of the way across the colour bar,
+to where it belongs. A record with no clock — an unbaked shard, a
+`localStorage` entry written before the clock existed — still interpolates.
 
 The end marker takes the end of the last *run*, not of the record — otherwise
 the one mark claiming to say where the glider is sits in an ocean it was never

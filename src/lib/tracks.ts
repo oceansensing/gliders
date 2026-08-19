@@ -178,13 +178,24 @@ export function encodeTrack(path: ReadonlyArray<readonly [number, number]>,
  * Together they break **239 steps, 0.047%, on 141 missions**, and 4.8% of
  * missions come out in more than one run.
  *
- * ## A rule that was tried and does not survive its own measurement
+ * And a third: **a gap of more than 30 days ends the record**, whatever the
+ * distance. Past a month of silence a glider has been recovered; a deployment
+ * does not go quiet for a season and resume. `cp_374-20140416T1634-delayed`
+ * is 344 fixes over 86 days in the spring of 2014 followed by **one single
+ * fix 760 days later**, which is how an 86-day mission comes to be filed as
+ * an 846-day one. The stray becomes a run of its own, a run of one is not a
+ * line, and it stops setting the dot and the view.
  *
- * A third of the long steps are not a speed at all — 2,523 of 7,343 follow a
- * gap of over nine hours — so a gap rule looked obviously right: four missed
- * reports and the vehicle has moved, therefore nobody watched it go. Breaking
- * on *a gap over 24 hours with more than 15 km covered* caught 474 steps that
- * the two rules above miss.
+ * Archive-wide that rule breaks **27 steps on 24 missions**. Median 7 fixes
+ * on the far side of the gap, and 6 of the 27 have two or fewer — those are
+ * strays; the rest are two deployments in one record.
+ *
+ * ## The version of that rule which does not survive its own measurement
+ *
+ * The month is doing real work; a *day* does not. A third of the long steps
+ * are not a speed at all — 2,523 of 7,343 follow a gap of over nine hours —
+ * so breaking on *a gap over 24 hours with more than 15 km covered* looked
+ * obviously right, and caught 474 steps the distance and speed rules miss.
  *
  * Then those 474 were measured. Their median is **30 km over 2.1 days, which
  * is 0.16 m/s**, and **434 of them are slower than 0.3 m/s** — slower than a
@@ -193,16 +204,18 @@ export function encodeTrack(path: ReadonlyArray<readonly [number, number]>,
  * rule more than doubled the missions that split, 118 to 292, and what it was
  * splitting were exactly the fast Spray gliders it was meant to protect.
  *
- * The lesson is worth keeping: **a long gap is evidence that nobody was
- * watching, not evidence that anything happened.** It was removed.
+ * **A day of silence is normal operations; a month is a recovery.** The
+ * threshold is not a tuning knob between them — they are different events,
+ * and the measurement is what says which is which.
  *
- * Both surviving rules **break the line rather than bridge it**, which is what
- * the plots do with a gap and for the same reason. And a fix unreachable from
+ * All three rules **break the line rather than bridge it**, which is what the
+ * plots do with a gap and for the same reason. And a fix unreachable from
  * *both* neighbours while they are reachable from each other is dropped
  * outright — that is one wrong position, not a vehicle that went somewhere.
  */
 export const MAX_STEP_KM = 50;
 export const MAX_SPEED_MS = 2.5;
+export const MAX_GAP_S = 30 * 86400;
 
 /**
  * The runs that are the mission, rather than a handful of stray fixes.
@@ -219,11 +232,11 @@ export const MAX_SPEED_MS = 2.5;
  * about the record. A run holding under 2% of the fixes is not the mission;
  * if that leaves nothing, nothing is dropped.
  */
-export function mainRuns<T extends { length: number }>(runs: readonly T[],
+export function mainRuns<T>(runs: readonly T[], size: (run: T) => number,
   share = 0.02): T[] {
-  const total = runs.reduce((n, r) => n + r.length, 0);
+  const total = runs.reduce((n, r) => n + size(r), 0);
   if (!total) return [...runs];
-  const main = runs.filter((r) => r.length >= total * share);
+  const main = runs.filter((r) => size(r) >= total * share);
   return main.length ? main : [...runs];
 }
 
@@ -243,6 +256,7 @@ export function reachable(a: readonly [number, number], b: readonly [number, num
   const km = stepKm(a, b);
   if (!(km <= MAX_STEP_KM)) return false;
   if (dtSeconds === undefined || !(dtSeconds > 0)) return true;
+  if (dtSeconds > MAX_GAP_S) return false;
   return (km * 1000) / dtSeconds <= MAX_SPEED_MS;
 }
 
@@ -261,8 +275,31 @@ export function cleanTrack(
   points: ReadonlyArray<readonly [number, number]>,
   times?: ArrayLike<number>,
 ): Array<Array<[number, number]>> {
-  return swimRuns(points.length, (i) => points[i], times && ((i) => times[i]))
-    .map((run) => run.map((i) => [points[i][0], points[i][1]] as [number, number]));
+  return swimTrack(points, times).map((run) => run.pts);
+}
+
+/** One stretch of a mission the glider could have swum, and when it swam it. */
+export interface Swum {
+  pts: Array<[number, number]>;
+  /**
+   * When each fix was taken, where the record carries a clock.
+   *
+   * Present so a stretch can be coloured by *when* it happened rather than by
+   * how far along the fix index it sits. Those differ exactly where a mission
+   * has gaps in it, which is exactly where the difference is worth having.
+   */
+  at?: number[];
+}
+
+export function swimTrack(
+  points: ReadonlyArray<readonly [number, number]>,
+  times?: ArrayLike<number>,
+): Swum[] {
+  const clock = times && ((i: number) => times[i]);
+  return swimRuns(points.length, (i) => points[i], clock).map((run) => ({
+    pts: run.map((i) => [points[i][0], points[i][1]] as [number, number]),
+    at: clock ? run.map((i) => times![i]) : undefined,
+  }));
 }
 
 /**
