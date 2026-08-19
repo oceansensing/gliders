@@ -1,0 +1,87 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# **No schedule, deliberately.** Nothing on this site is rendered from live
+# data at build time: the catalog, every profile and every derived property
+# are fetched by the reader's own browser when the page opens, so a nightly
+# rebuild would publish byte-identical output. The one thing that *is* baked
+# in — `public/data/deployments.json` — is a fallback for when the DAC is
+# unreachable, and refreshing it is `npm run data:deployments`, run by hand
+# when it is worth doing.
+
+# Read-only by default; the two write scopes are granted to the one job that
+# needs them. `npm ci` runs install scripts and `npm run verify` runs the
+# harnesses, so neither should have a Pages-write token or an OIDC identity
+# sitting in its environment.
+#
+# Actions are pinned to commit SHAs with the tag they came from beside them.
+# A tag is mutable — whoever controls that repository can move `v4` onto any
+# commit, and every workflow naming it runs the new code on the next push
+# with nothing to review.
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  # The gate. Nothing reaches Pages unless this passes. It runs entirely
+  # offline — every test reads a committed fixture rather than the DAC — so
+  # it cannot fail because an upstream server is having a bad morning, which
+  # is exactly when you least want the deploy blocked.
+  verify:
+    runs-on: ubuntu-latest
+    # Supersede an in-flight gate, and only the gate. Not on the workflow,
+    # where `pages` keeps `cancel-in-progress: false`: killing a run
+    # mid-deploy is how a Pages site ends up half-published.
+    # Keyed by event as well as ref so a manual dispatch cannot cancel a
+    # push's gate.
+    concurrency:
+      group: verify-${{ github.ref }}-${{ github.event_name }}
+      cancel-in-progress: true
+    # The suite is under a minute; anything near this is wedged rather than
+    # slow, and an unbounded job holds the `pages` group for six hours.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run verify
+
+  build:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: withastro/action@56781b97402ce0487b7e61ce2cb960c0e2cc5289 # v3
+        with:
+          node-version: 22
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    # The only job that publishes, so the only one holding the scopes to.
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    # `actions/deploy-pages` polls for ten minutes of its own before giving
+    # up, so this is that plus room rather than a tighter deadline.
+    timeout-minutes: 15
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

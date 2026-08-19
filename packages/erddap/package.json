@@ -1,0 +1,13 @@
+{
+  "name": "@c4po/erddap",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Client for ERDDAP tabledap, shaped for glider deployments on the IOOS Glider DAC",
+  "type": "module",
+  "exports": {
+    ".": "./index.ts",
+    "./url": "./url.ts",
+    "./parse": "./parse.ts",
+    "./qc": "./qc.ts"
+  }
+}

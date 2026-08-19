@@ -1,0 +1,73 @@
+---
+import { DAC, LAB, REPO } from '../config';
+
+const { wide = false } = Astro.props;
+---
+
+<footer>
+  <div class={`container inner${wide ? ' wide' : ''}`}>
+    <div class="col">
+      <p class="lab">
+        <a href={LAB.url}>{LAB.name} — {LAB.fullName}</a>
+      </p>
+      <p class="muted">
+        Data from the <a href={DAC}>IOOS Glider DAC</a>, fetched by your browser
+        and plotted on your machine. Files you open locally are never uploaded.
+      </p>
+    </div>
+    <div class="col links">
+      <ul>
+        <li><a href={REPO}>Source</a></li>
+        <li><a href={LAB.decoder}>Slocum decoder</a></li>
+        <li><a href={LAB.url}>oceansensing.org</a></li>
+      </ul>
+    </div>
+  </div>
+</footer>
+
+<style>
+  footer {
+    border-top: 1px solid var(--border);
+    margin-block-start: var(--space-2xl);
+    padding-block: var(--space-lg);
+    font-size: var(--text-sm);
+  }
+
+  .inner {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-lg) clamp(var(--space-lg), 5vw, var(--space-2xl));
+  }
+
+  .col {
+    max-width: 42ch;
+  }
+
+  .lab {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    margin-block-end: var(--space-xs);
+  }
+
+  .lab a {
+    color: var(--text);
+  }
+
+  .links {
+    margin-inline-start: auto;
+  }
+
+  ul {
+    list-style: none;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xs);
+  }
+
+  @media (max-width: 48rem) {
+    .links {
+      margin-inline-start: 0;
+    }
+  }
+</style>

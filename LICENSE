@@ -1,0 +1,45 @@
+Copyright (c) 2026 Donglai Gong and the Collaboratory for Physical
+Oceanography (C4PO). All rights reserved.
+
+This repository contains the source code of the glider data visualization
+site at https://oceansensing.org/gliders/.
+
+No permission is granted to copy, modify, merge, publish, distribute,
+sublicense, or sell any part of this repository, or to create derivative
+works from it, whether in source or compiled form, without the prior written
+permission of the copyright holder. The repository is public so that the
+site can be served from GitHub Pages and so that the work is open to
+inspection; publishing it is not a grant of any license.
+
+Requests for permission: info@c4po.science
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+IN IT.
+
+
+Third-party material
+--------------------
+
+This license covers the original work in this repository. It does not, and
+cannot, cover material from other sources, which carries its own terms and
+remains the property of its respective owners:
+
+  - Software dependencies under their own licences, as declared in
+    package.json and package-lock.json — including Leaflet (BSD-2-Clause)
+    and Astro (MIT).
+
+  - Glider observations, which this site reads directly from the IOOS
+    Glider Data Assembly Center (https://gliders.ioos.us/erddap/) and does
+    not redistribute. Each deployment remains the work of the operator
+    named on it; the site credits that operator on every page it appears on.
+
+  - Basemap tiles from Esri and its contributors (GEBCO, NOAA, National
+    Geographic), used under Esri's terms and attributed on every map.
+
+  - The TEOS-10 Absolute Salinity Anomaly atlas in public/teos10/, extracted
+    from the Gibbs SeaWater Oceanographic Toolbox and carrying its terms.

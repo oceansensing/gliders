@@ -1,0 +1,66 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import DeploymentBrowser from '../components/DeploymentBrowser.astro';
+import { DAC, LAB } from '../config';
+---
+
+<BaseLayout wide>
+  <div class="container wide">
+    <div class="intro">
+      <p class="eyebrow">IOOS Glider DAC</p>
+      <h1>Every glider, plotted.</h1>
+      <p class="lede">
+        Pick a deployment and get its track, its sections, and its T–S diagram —
+        temperature and salinity as measured, and Conservative Temperature,
+        Absolute Salinity, density, spice and sound speed computed from TEOS-10
+        in your browser. Nothing is precomputed and nothing is uploaded.
+      </p>
+    </div>
+
+    <DeploymentBrowser />
+
+    <details class="aside">
+      <summary>Where this comes from</summary>
+      <div class="prose">
+        <p>
+          The catalog and every profile on this site are read directly from the
+          <a href={DAC}>IOOS Glider Data Assembly Center</a>, the national
+          archive US glider operators submit to. This site holds no copy of it:
+          your browser asks the DAC, and the plots are drawn from the answer.
+          A snapshot of the catalog is kept only so the list still appears when
+          the DAC is unreachable.
+        </p>
+        <p>
+          Derived properties are computed here, from the practical salinity,
+          in-situ temperature and pressure each dataset publishes, using a
+          TEOS-10 implementation evaluated from the Gibbs function rather than
+          fitted polynomials. Absolute Salinity uses the measured anomaly atlas
+          and each sample's own position; where a position is unavailable the
+          page says the value is Reference Salinity instead of quietly
+          reporting one under the other's name.
+        </p>
+        <p>
+          Raw Slocum files can be read on the <a href="local/">local files</a>
+          page without leaving your machine. For CSV, netCDF and OG1 exports of
+          those files, the <a href={LAB.decoder}>decoder on oceansensing.org</a>
+          does more.
+        </p>
+      </div>
+    </details>
+  </div>
+</BaseLayout>
+
+<style>
+  .intro {
+    margin-block-start: var(--space-xl);
+  }
+
+  h1 {
+    margin-block: var(--space-2xs) var(--space-sm);
+  }
+
+  .lede {
+    max-width: var(--prose-width);
+    color: var(--text-muted);
+  }
+</style>

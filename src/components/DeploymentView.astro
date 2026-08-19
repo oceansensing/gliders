@@ -1,0 +1,244 @@
+---
+import PlotFigure from './PlotFigure.astro';
+---
+
+<div class="view" data-view>
+  <header class="head">
+    <p class="eyebrow" data-eyebrow>IOOS Glider DAC</p>
+    <h1 data-title>Loading…</h1>
+    <p class="meta mono" data-meta></p>
+    <div class="progress" data-progress hidden>
+      <div class="bar"><span data-bar></span></div>
+      <p class="mono muted" data-progress-text></p>
+      <button class="btn" type="button" data-stop>Stop</button>
+    </div>
+    <p class="problem" data-problem hidden></p>
+  </header>
+
+  <section class="pair">
+    <figure class="map-figure">
+      <figcaption class="topline">
+        <span class="eyebrow">Track</span>
+        <span class="mono muted" data-track-note></span>
+      </figcaption>
+      <div class="map" data-map role="application" aria-label="Glider track"></div>
+    </figure>
+    <div class="ts">
+      <PlotFigure id="ts" title="T–S diagram" hint="Waiting for data…" />
+    </div>
+  </section>
+
+  <section class="sections">
+    <h2>Sections</h2>
+    <p class="muted lede">
+      Every variable this deployment carries, against time and depth. Computed
+      properties are marked; the rest are as the DAC published them.
+    </p>
+    <div class="chips" data-chips role="group" aria-label="Variables to plot"></div>
+    <div data-figures></div>
+  </section>
+
+  <section class="profiles">
+    <PlotFigure
+      id="profile"
+      title="Profiles"
+      hint="Pick a variable and a time window to load at full resolution."
+    />
+    <div class="controls">
+      <label>
+        <span class="eyebrow">from</span>
+        <input class="field" type="datetime-local" data-profile-from />
+      </label>
+      <label>
+        <span class="eyebrow">to</span>
+        <input class="field" type="datetime-local" data-profile-to />
+      </label>
+      <button class="btn" type="button" data-profile-load>Load full resolution</button>
+      <span class="mono muted" data-profile-note></span>
+    </div>
+  </section>
+
+  <details class="aside">
+    <summary>About this deployment</summary>
+    <div class="prose">
+      <p data-summary></p>
+      <p class="mono" data-resolution></p>
+      <p>
+        <label class="inline">
+          <input type="checkbox" data-qc checked />
+          Hide values their QARTOD flag marks <em>fail</em> or <em>missing</em>
+        </label>
+      </p>
+      <p data-links></p>
+    </div>
+  </details>
+</div>
+
+<style>
+  .head {
+    margin-block: var(--space-xl) var(--space-lg);
+  }
+
+  h1 {
+    font-size: var(--text-2xl);
+    margin-block: var(--space-2xs) var(--space-xs);
+    overflow-wrap: anywhere;
+  }
+
+  .meta {
+    color: var(--text-muted);
+  }
+
+  .progress {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    margin-block-start: var(--space-sm);
+    flex-wrap: wrap;
+  }
+
+  .bar {
+    flex: 1 1 12rem;
+    max-width: 22rem;
+    height: 4px;
+    background: var(--bg-subtle);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+
+  .bar span {
+    display: block;
+    height: 100%;
+    width: 0;
+    background: var(--accent);
+    transition: width 0.2s ease;
+  }
+
+  .problem {
+    margin-block-start: var(--space-sm);
+    color: var(--text);
+    border-inline-start: 3px solid var(--accent);
+    padding-inline-start: var(--space-sm);
+  }
+
+  .pair {
+    display: grid;
+    gap: var(--space-lg);
+    grid-template-columns: 1fr;
+    margin-block-end: var(--space-xl);
+  }
+
+  @media (min-width: 64rem) {
+    .pair {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      align-items: start;
+    }
+  }
+
+  .map-figure {
+    margin: 0;
+  }
+
+  .map {
+    height: 30rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-subtle);
+  }
+
+  .topline {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--space-sm);
+    margin-block-end: var(--space-2xs);
+  }
+
+  h2 {
+    margin-block-end: var(--space-2xs);
+  }
+
+  .lede {
+    max-width: var(--prose-width);
+    margin-block-end: var(--space-sm);
+  }
+
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2xs);
+    margin-block-end: var(--space-lg);
+  }
+
+  .profiles {
+    margin-block-start: var(--space-xl);
+  }
+
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--space-xs) var(--space-sm);
+  }
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .inline {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-xs);
+  }
+</style>
+
+<style is:global>
+  /* Chips are built at runtime, so these cannot be scoped. */
+  [data-chips] .chip {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    background: none;
+    color: var(--text-muted);
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    padding: var(--space-2xs) var(--space-sm);
+    cursor: pointer;
+  }
+
+  [data-chips] .chip:hover {
+    color: var(--text);
+    border-color: var(--text-muted);
+  }
+
+  [data-chips] .chip[aria-pressed='true'] {
+    color: var(--accent-contrast);
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
+  /* A small dot marking a property computed here rather than published. */
+  [data-chips] .chip .computed {
+    display: inline-block;
+    width: 0.45em;
+    height: 0.45em;
+    margin-inline-end: 0.4em;
+    border-radius: 50%;
+    background: currentColor;
+    vertical-align: 0.1em;
+    opacity: 0.7;
+  }
+
+  .track-start {
+    stroke: var(--text);
+    fill: var(--bg);
+    fill-opacity: 1;
+  }
+
+  .track-end {
+    stroke: var(--accent);
+    fill: var(--accent);
+    fill-opacity: 0.9;
+  }
+</style>

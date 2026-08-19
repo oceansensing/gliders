@@ -1,0 +1,29 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import DeploymentView from '../components/DeploymentView.astro';
+import PlotFigure from '../components/PlotFigure.astro';
+---
+
+<BaseLayout title="Deployment" wide>
+  <div class="container wide full">
+    <DeploymentView />
+
+    <!--
+      The prototype every section figure is cloned from.
+
+      A compiled Astro component cannot be instantiated at runtime, and the
+      number of sections is the reader's choice — so one is rendered hidden
+      and copied. This is also the reason the figure's own linework is styled
+      globally under `[data-figure]`: a clone carries no scoping attribute of
+      its own, and scoped rules would leave every section unstyled.
+    -->
+    <div hidden data-prototype-host>
+      <PlotFigure id="prototype" title="Section" />
+    </div>
+  </div>
+</BaseLayout>
+
+<script>
+  import { startDeploymentPage } from '../lib/deployment';
+  startDeploymentPage();
+</script>

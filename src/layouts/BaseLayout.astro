@@ -1,0 +1,66 @@
+---
+import '../styles/global.css';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import { SITE } from '../config';
+import { withBase } from '../lib/url';
+
+interface Props {
+  title?: string;
+  description?: string;
+  /** Pages built around a full-width figure. The map and the sections take
+      the whole viewport, and the page's own text sits at their left edge
+      rather than centred — so the header and footer move with them, or they
+      are the only things on the page not on that edge. */
+  wide?: boolean;
+}
+
+const { title, description = SITE.description, wide = false } = Astro.props;
+const pageTitle = title ? `${title} · ${SITE.title}` : `${SITE.title} — ${SITE.fullName}`;
+const canonical = new URL(Astro.url.pathname, Astro.site);
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{pageTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" href={withBase('/favicon.svg')} type="image/svg+xml" />
+    <meta name="generator" content={Astro.generator} />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta name="twitter:card" content="summary" />
+
+    <!-- Apply the saved theme before first paint, so the page does not flash
+         the other one. Guarded, because reading localStorage *throws* where a
+         browser is set to block site data — Safari's private windows, and
+         anything with third-party-ish storage disabled — and this is the
+         first script on every page. The theme then follows the system, which
+         is the right fallback for a reader who has told their browser to keep
+         nothing. -->
+    <script is:inline>
+      try {
+        const saved = localStorage.getItem('theme');
+        if (saved === 'light' || saved === 'dark') {
+          document.documentElement.dataset.theme = saved;
+        }
+      } catch {
+        /* no stored preference to honor */
+      }
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <Header wide={wide} />
+    <main id="main">
+      <slot />
+    </main>
+    <Footer wide={wide} />
+  </body>
+</html>

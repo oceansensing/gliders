@@ -1,0 +1,39 @@
+{
+  "name": "gliders",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "description": "Glider data visualization — IOOS Glider DAC and raw Slocum files, in the browser",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check",
+    "astro": "astro",
+    "data:deployments": "node scripts/fetch-deployments.mjs",
+    "spike:erddap": "node scripts/spike-erddap.mjs",
+    "test:erddap": "node scripts/test-erddap.mjs",
+    "test:plot": "node scripts/test-plot.mjs",
+    "test:derive": "node scripts/test-derive.mjs",
+    "test:teos10": "node scripts/test-teos10.mjs",
+    "test:contrast": "node scripts/test-contrast.mjs",
+    "test:pages": "node scripts/test-pages.mjs",
+    "check:vendored": "node scripts/check-vendored.mjs",
+    "verify": "npm run build && npm run check && npm run test:teos10 && npm run test:erddap && npm run test:plot && npm run test:derive && npm run test:contrast && npm run test:pages"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/jetbrains-mono": "^5.2.8",
+    "astro": "^7.0.7",
+    "leaflet": "^1.9.4"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.9",
+    "@types/leaflet": "^1.9.22",
+    "jsdom": "^30.0.1",
+    "typescript": "^6.0.3"
+  }
+}

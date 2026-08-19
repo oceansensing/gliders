@@ -1,0 +1,241 @@
+---
+/**
+ * The shell one figure lives in: a title, an SVG, a pointer readout, a
+ * caption, and the controls that drive them.
+ *
+ * Everything is found by `data-plot-*` attribute rather than by id, because
+ * a page carries several of these. `makeFigure` in `lib/figure.ts` is what
+ * wires them.
+ */
+
+interface Props {
+  title: string;
+  /** Placed on the element so the caller can find this figure. */
+  id: string;
+  /** Shown under the title, before any data has arrived. */
+  hint?: string;
+}
+
+const { title, id, hint } = Astro.props;
+---
+
+<figure class="plot" data-figure={id}>
+  <figcaption class="head">
+    <h3>{title}</h3>
+    <p class="hover mono" data-plot-hover aria-live="off"></p>
+  </figcaption>
+
+  <svg data-plot-svg role="img" aria-label={title}>
+    <title>{title}</title>
+  </svg>
+
+  <p class="caption" data-plot-caption>{hint ?? ''}</p>
+
+  <div class="controls">
+    <label>
+      <span class="eyebrow">x</span>
+      <select class="field" data-plot-x></select>
+    </label>
+    <label>
+      <span class="eyebrow">y</span>
+      <select class="field" data-plot-y></select>
+    </label>
+    <label>
+      <span class="eyebrow">color</span>
+      <select class="field" data-plot-c></select>
+    </label>
+    <label>
+      <span class="eyebrow">scale</span>
+      <select class="field" data-plot-map></select>
+    </label>
+    <span class="ramp" data-plot-ramp aria-hidden="true"></span>
+    <button class="btn" type="button" data-plot-flip aria-pressed="false">y down</button>
+    <button class="btn" type="button" data-plot-png>PNG</button>
+  </div>
+
+  <details class="aside more">
+    <summary>Limits and drawing</summary>
+    <div class="controls">
+      <label class="pair">
+        <span class="eyebrow">x from</span>
+        <input class="field" type="number" step="any" data-plot-x-lo />
+      </label>
+      <label class="pair">
+        <span class="eyebrow">to</span>
+        <input class="field" type="number" step="any" data-plot-x-hi />
+      </label>
+      <label class="pair">
+        <span class="eyebrow">y from</span>
+        <input class="field" type="number" step="any" data-plot-y-lo />
+      </label>
+      <label class="pair">
+        <span class="eyebrow">to</span>
+        <input class="field" type="number" step="any" data-plot-y-hi />
+      </label>
+      <label class="pair">
+        <span class="eyebrow">color from</span>
+        <input class="field" type="number" step="any" data-plot-c-lo />
+      </label>
+      <label class="pair">
+        <span class="eyebrow">to</span>
+        <input class="field" type="number" step="any" data-plot-c-hi />
+      </label>
+      <label class="pair">
+        <span class="eyebrow">height</span>
+        <input class="field" type="number" min="160" max="1200" step="10" value="380" data-plot-h />
+      </label>
+      <label class="pair">
+        <span class="eyebrow">dot</span>
+        <input class="field" type="number" min="0.5" max="12" step="0.5" value="2.5" data-plot-dot />
+      </label>
+      <label class="pair">
+        <span class="eyebrow">steps</span>
+        <input class="field" type="number" min="2" max="256" step="1" value="24" data-plot-steps />
+      </label>
+      <label class="pair">
+        <span class="eyebrow">style</span>
+        <select class="field" data-plot-style>
+          <option value="dots">dots</option>
+          <option value="line">line</option>
+          <option value="both">both</option>
+        </select>
+      </label>
+      <button class="btn" type="button" data-plot-reset>Reset</button>
+    </div>
+  </details>
+</figure>
+
+<style>
+  .plot {
+    margin: 0 0 var(--space-xl);
+  }
+
+  .head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-xs) var(--space-md);
+    margin-block-end: var(--space-xs);
+  }
+
+  h3 {
+    font-size: var(--text-lg);
+  }
+
+  .hover {
+    margin-inline-start: auto;
+    color: var(--text-muted);
+    min-height: 1.4em;
+  }
+
+  svg {
+    width: 100%;
+    height: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg);
+    touch-action: none;
+  }
+
+  .caption {
+    margin-block-start: var(--space-2xs);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+  }
+
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--space-xs) var(--space-sm);
+    margin-block-start: var(--space-sm);
+  }
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .pair input,
+  .pair select {
+    width: 9rem;
+  }
+
+  .ramp {
+    display: flex;
+    height: 1.6rem;
+    width: 6rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  .more {
+    margin-block-start: var(--space-xs);
+  }
+</style>
+
+<style is:global>
+  /* The plot's own linework. Global because every node inside the SVG is
+     built by a script, and Astro's scoping attribute is stamped on compiled
+     markup only — a scoped `.trace` would match nothing and the plot would
+     render as black fills on black strokes.
+     Anchored under `[data-figure]` so it is still confined to these
+     figures rather than every SVG on the page. */
+  [data-figure] .axis {
+    fill: none;
+    stroke: var(--border);
+    stroke-width: 1;
+  }
+
+  /* `fill: none` is not optional: an SVG path fills by default, so without
+     it the two-legged axis renders as a solid triangle across the plot. */
+  [data-figure] .trace {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 1.5;
+  }
+
+  [data-figure] .tick {
+    fill: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 10px;
+  }
+
+  [data-figure] .axis-name {
+    fill: var(--text);
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+
+  [data-figure] .color-frame {
+    fill: none;
+    stroke: var(--border);
+  }
+
+  [data-figure] .ring {
+    fill: none;
+    stroke: var(--text);
+    stroke-width: 1.5;
+    pointer-events: none;
+  }
+
+  [data-figure] .isopycnal {
+    fill: none;
+    stroke: var(--text-muted);
+    stroke-width: 0.7;
+    opacity: 0.55;
+  }
+
+  [data-figure] .isopycnal-label {
+    fill: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 9px;
+  }
+
+  [data-plot-ramp] span {
+    flex: 1;
+  }
+</style>

@@ -1,0 +1,214 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import PlotFigure from '../components/PlotFigure.astro';
+import { LAB } from '../config';
+---
+
+<BaseLayout title="Local files" wide>
+  <div class="container wide full">
+    <header class="head">
+      <p class="eyebrow">Raw Slocum files</p>
+      <h1>Read a glider’s own files, here.</h1>
+      <p class="lede">
+        Drop the flight and science files off a Slocum — <code>sbd</code>,
+        <code>tbd</code>, <code>dbd</code>, <code>ebd</code>, <code>mbd</code>,
+        <code>nbd</code> and their compressed twins — together with the
+        <code>.cac</code> sensor lists they were written against. They are
+        decoded in this tab and never leave your machine.
+      </p>
+    </header>
+
+    <section class="drop" data-drop>
+      <div class="zone" data-zone>
+        <p><strong>Drop files here</strong>, or</p>
+        <p class="picks">
+          <label class="btn">
+            Choose files
+            <input type="file" multiple data-files hidden />
+          </label>
+          <label class="btn">
+            Choose a folder
+            {/* `webkitdirectory` is the only way to take a whole directory,
+                and it is not in the HTML attribute types — set on the element
+                at runtime instead of written here, which also keeps the
+                type checker honest rather than silenced. */}
+            <input type="file" multiple data-folder hidden />
+          </label>
+        </p>
+        <p class="mono muted">Nothing is uploaded. There is no server to upload to.</p>
+      </div>
+      <p class="report" data-report></p>
+      <div class="deployments" data-deployments hidden>
+        <label>
+          <span class="eyebrow">Deployment</span>
+          <select class="field" data-deployment></select>
+        </label>
+      </div>
+    </section>
+
+    <div hidden data-panels>
+      <section class="pair">
+        <figure class="map-figure">
+          <figcaption class="topline">
+            <span class="eyebrow">Track</span>
+            <span class="mono muted">coloured by time</span>
+          </figcaption>
+          <div class="map" data-map role="application" aria-label="Glider track"></div>
+        </figure>
+        <PlotFigure id="ts" title="T–S diagram" hint="Waiting for files…" />
+      </section>
+
+      <section class="sections">
+        <h2>Sections</h2>
+        <div class="chips" data-chips role="group" aria-label="Variables to plot"></div>
+        <div data-figures></div>
+      </section>
+    </div>
+
+    <div hidden data-prototype-host>
+      <PlotFigure id="prototype" title="Section" />
+    </div>
+
+    <details class="aside">
+      <summary>What this does, and what it does not</summary>
+      <div class="prose">
+        <p>
+          The decoder is the one behind
+          <a href={LAB.decoder}>oceansensing.org/data/slocum</a> — a
+          from-scratch reader for Slocum’s dinkum binary format, validated
+          against <code>dbdreader</code>. A Slocum file is <em>factored</em>:
+          the sensor names live in a separate <code>.cac</code> file, so
+          without the matching one a file is a list of numbers with nothing
+          saying what they are. Drop the caches in alongside and they are
+          remembered for next time.
+        </p>
+        <p>
+          Seawater properties come from the same TEOS-10 implementation the
+          deployment pages use, through the decoder’s own derivation — which
+          matters here in a way it does not for the DAC: a Slocum writes
+          conductivity in S/m and pressure in bar, and TEOS-10 wants mS/cm and
+          dbar. Both are a factor of ten, and both are silent when wrong.
+        </p>
+        <p>
+          Position needs the same care. A Slocum writes latitude and longitude
+          as NMEA <code>DDDMM.MMMM</code>, which is a perfectly ordinary
+          number — <code>3936.313</code> is 39.605° N, and read at face value
+          it is a latitude that does not exist.
+        </p>
+        <p>
+          <strong>No exports here.</strong> The decoder on oceansensing.org
+          already writes CSV, netCDF-3 and OceanGliders OG1.0 from these same
+          files, and is tested against a reference; a second implementation
+          would be a second thing to keep correct. This page plots.
+        </p>
+      </div>
+    </details>
+  </div>
+</BaseLayout>
+
+<style>
+  .head {
+    margin-block: var(--space-xl) var(--space-lg);
+  }
+
+  h1 {
+    margin-block: var(--space-2xs) var(--space-sm);
+  }
+
+  .lede {
+    max-width: var(--prose-width);
+    color: var(--text-muted);
+  }
+
+  .zone {
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    padding: var(--space-xl) var(--space-md);
+    text-align: center;
+    background: var(--bg-subtle);
+  }
+
+  .zone p {
+    margin-block-end: var(--space-xs);
+  }
+
+  .picks {
+    display: flex;
+    gap: var(--space-sm);
+    justify-content: center;
+  }
+
+  .picks .btn {
+    cursor: pointer;
+  }
+
+  .report {
+    margin-block-start: var(--space-sm);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    white-space: pre-line;
+  }
+
+  .deployments {
+    margin-block-start: var(--space-md);
+  }
+
+  .deployments label {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xs);
+    max-width: 32rem;
+  }
+
+  .pair {
+    display: grid;
+    gap: var(--space-lg);
+    grid-template-columns: 1fr;
+    margin-block: var(--space-xl);
+  }
+
+  @media (min-width: 64rem) {
+    .pair {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      align-items: start;
+    }
+  }
+
+  .map-figure {
+    margin: 0;
+  }
+
+  .map {
+    height: 30rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-subtle);
+  }
+
+  .topline {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-block-end: var(--space-2xs);
+  }
+
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2xs);
+    margin-block-end: var(--space-lg);
+  }
+</style>
+
+<style is:global>
+  [data-zone].over {
+    border-color: var(--accent);
+    background: var(--bg);
+  }
+</style>
+
+<script>
+  import { startLocalPage } from '../lib/local-page';
+  startLocalPage();
+</script>

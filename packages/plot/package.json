@@ -1,0 +1,12 @@
+{
+  "name": "@c4po/plot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A small SVG scatter/line plot with a color axis, for oceanographic sections and T–S diagrams",
+  "type": "module",
+  "exports": {
+    ".": "./index.ts",
+    "./colormaps": "./colormaps.ts",
+    "./plot": "./plot.ts"
+  }
+}

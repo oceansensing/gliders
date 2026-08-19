@@ -1,0 +1,508 @@
+---
+/**
+ * Every deployment on the DAC: a map, and a table you can search.
+ *
+ * The markup here is the shell. Rows and markers are built at runtime from
+ * the live catalog, which is why the styles for them are in `global.css` and
+ * in a `is:global` block below rather than in scoped rules — Astro stamps
+ * its scoping attribute on the markup it compiles, not on nodes a script
+ * appends later, so a scoped rule for `.row` would match nothing.
+ */
+---
+
+<section class="controls" data-browser>
+  <div class="row">
+    <label class="grow">
+      <span class="eyebrow">Search</span>
+      <input
+        class="field"
+        type="search"
+        data-search
+        placeholder="glider, institution, or dataset id"
+        autocomplete="off"
+      />
+    </label>
+    <label>
+      <span class="eyebrow">Year</span>
+      <select class="field" data-year>
+        <option value="">any</option>
+      </select>
+    </label>
+    <button class="btn" type="button" data-active aria-pressed="true">Active only</button>
+  </div>
+  <p class="status eyebrow" data-status>Loading the catalog…</p>
+</section>
+
+<figure class="map-figure">
+  <div class="map" data-map role="application" aria-label="Map of glider deployments"></div>
+</figure>
+
+<div class="table-wrap">
+  <table data-table>
+    <thead>
+      <tr>
+        <th scope="col"><button type="button" data-sort="title">Deployment</button></th>
+        <th scope="col"><button type="button" data-sort="institution">Institution</button></th>
+        <th scope="col"><button type="button" data-sort="start">Start</button></th>
+        <th scope="col"><button type="button" data-sort="end">Last report</button></th>
+        <th scope="col" class="num"><button type="button" data-sort="days">Days</button></th>
+      </tr>
+    </thead>
+    <tbody data-rows></tbody>
+  </table>
+  <p class="more eyebrow" data-more hidden></p>
+</div>
+
+<style>
+  .controls {
+    margin-block: var(--space-lg) var(--space-md);
+  }
+
+  .controls .row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+    align-items: flex-end;
+  }
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xs);
+  }
+
+  .grow {
+    flex: 1 1 18rem;
+  }
+
+  .grow input {
+    width: 100%;
+  }
+
+  .status {
+    margin-block-start: var(--space-sm);
+    text-transform: none;
+    letter-spacing: 0;
+  }
+
+  .map-figure {
+    margin: 0;
+  }
+
+  .map {
+    height: clamp(20rem, 52vh, 34rem);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-subtle);
+  }
+
+  .table-wrap {
+    margin-block-start: var(--space-lg);
+    overflow-x: auto;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-sm);
+  }
+
+  th {
+    text-align: start;
+    border-bottom: 1px solid var(--border);
+    padding: var(--space-xs) var(--space-sm) var(--space-xs) 0;
+  }
+
+  th button {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  th button:hover {
+    color: var(--text);
+  }
+
+  .more {
+    margin-block-start: var(--space-sm);
+    text-transform: none;
+    letter-spacing: 0;
+  }
+
+  .num {
+    text-align: end;
+  }
+</style>
+
+<style is:global>
+  /* Rows are built by the script, so these cannot be scoped rules. */
+  [data-rows] tr {
+    border-bottom: 1px solid var(--border);
+  }
+
+  [data-rows] td {
+    padding: var(--space-xs) var(--space-sm) var(--space-xs) 0;
+    vertical-align: baseline;
+  }
+
+  [data-rows] td.num,
+  [data-rows] td.when {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  [data-rows] td.num {
+    text-align: end;
+  }
+
+  [data-rows] .id {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    color: var(--text-muted);
+  }
+
+  [data-rows] .live {
+    display: inline-block;
+    margin-inline-start: var(--space-xs);
+    padding: 0 0.4em;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--accent-contrast);
+    font-family: var(--font-mono);
+    font-size: 0.75em;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    vertical-align: 0.1em;
+  }
+
+  /* A deployment still reporting, and one that has finished. Classes rather
+     than Leaflet's `color`/`fillColor` options so a theme switch restyles
+     every marker with no redraw — the rule the plots keep too. */
+  .marker-live {
+    stroke: var(--accent);
+    fill: var(--accent);
+    fill-opacity: 0.55;
+  }
+
+  .marker-past {
+    stroke: var(--text-muted);
+    fill: var(--text-muted);
+    fill-opacity: 0.25;
+  }
+
+  .marker-live:hover,
+  .marker-past:hover {
+    fill-opacity: 0.85;
+  }
+
+  /* Leaflet's own chrome, themed. */
+  .leaflet-container {
+    background: var(--bg-subtle);
+    font-family: var(--font-sans);
+  }
+
+  .leaflet-popup-content-wrapper,
+  .leaflet-popup-tip {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    box-shadow: none;
+    border-radius: var(--radius);
+  }
+
+  .leaflet-popup-content {
+    margin: var(--space-xs) var(--space-sm);
+    font-size: var(--text-sm);
+  }
+
+  .leaflet-popup-content .id {
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    font-size: 0.9em;
+  }
+
+  .leaflet-bar a,
+  .leaflet-control-attribution {
+    background: var(--bg);
+    color: var(--text-muted);
+    border-color: var(--border);
+  }
+
+  .leaflet-bar a {
+    color: var(--text);
+  }
+</style>
+
+<script>
+  import L from 'leaflet';
+  import 'leaflet/dist/leaflet.css';
+  import { listDatasets, type DeploymentSummary } from '@c4po/erddap';
+  import { withBase } from '../lib/url';
+
+  const root = document.querySelector<HTMLElement>('[data-browser]')!;
+  const search = root.querySelector<HTMLInputElement>('[data-search]')!;
+  const yearSel = root.querySelector<HTMLSelectElement>('[data-year]')!;
+  const activeBtn = root.querySelector<HTMLButtonElement>('[data-active]')!;
+  const status = root.querySelector<HTMLElement>('[data-status]')!;
+  const tbody = document.querySelector<HTMLElement>('[data-rows]')!;
+  const more = document.querySelector<HTMLElement>('[data-more]')!;
+  const mapEl = document.querySelector<HTMLElement>('[data-map]')!;
+
+  /** A deployment counts as active when it reported within this many days.
+      Seven rather than one: a glider surfaces on its own schedule and a
+      shorter window blinks deployments in and out of the default view. */
+  const ACTIVE_DAYS = 7;
+  /** Rows rendered at once. The table is 2,500 rows and nobody scrolls that
+      far; the count of what is not shown is printed rather than hidden. */
+  const PAGE = 300;
+
+  let all: DeploymentSummary[] = [];
+  let shown: DeploymentSummary[] = [];
+  let sortKey: 'title' | 'institution' | 'start' | 'end' | 'days' = 'end';
+  let sortDir = -1;
+  let limit = PAGE;
+
+  // `fadeAnimation: false` — see the note in `lib/track.ts`: the fade is
+  // driven by requestAnimationFrame, which a background tab never runs, so
+  // downloaded tiles stay invisible until the tab is focused.
+  const map = L.map(mapEl, { worldCopyJump: true, fadeAnimation: false })
+    .setView([30, -60], 2);
+  L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}',
+    {
+      maxZoom: 13,
+      attribution: 'Esri — GEBCO, NOAA, National Geographic',
+    },
+  ).addTo(map);
+  const markers = L.layerGroup().addTo(map);
+
+  const now = () => Date.now() / 1000;
+  const isActive = (d: DeploymentSummary) => now() - d.end < ACTIVE_DAYS * 86400;
+  const days = (d: DeploymentSummary) => Math.max(0, (d.end - d.start) / 86400);
+  const date = (t: number) =>
+    Number.isFinite(t) ? new Date(t * 1000).toISOString().slice(0, 10) : '—';
+
+  /** The deployment page, for one dataset. */
+  const link = (id: string) => `${withBase('/deployment/')}?dataset=${encodeURIComponent(id)}`;
+
+  function filtered(): DeploymentSummary[] {
+    const q = search.value.trim().toLowerCase();
+    const year = yearSel.value;
+    const activeOnly = activeBtn.getAttribute('aria-pressed') === 'true';
+    const terms = q ? q.split(/\s+/) : [];
+
+    return all.filter((d) => {
+      if (activeOnly && !isActive(d)) return false;
+      if (year) {
+        const y = new Date(d.start * 1000).getUTCFullYear();
+        const y2 = new Date(d.end * 1000).getUTCFullYear();
+        if (String(y) !== year && String(y2) !== year) return false;
+      }
+      if (!terms.length) return true;
+      // Every term has to match somewhere, so two words narrow rather than
+      // widen — "rutgers 2019" is one question, not two.
+      const hay = `${d.id} ${d.title} ${d.institution}`.toLowerCase();
+      return terms.every((t) => hay.includes(t));
+    });
+  }
+
+  function sorted(rows: DeploymentSummary[]): DeploymentSummary[] {
+    const key = sortKey;
+    return [...rows].sort((a, b) => {
+      let d = 0;
+      if (key === 'title') d = a.title.localeCompare(b.title);
+      else if (key === 'institution') d = a.institution.localeCompare(b.institution);
+      else if (key === 'days') d = days(a) - days(b);
+      else d = a[key] - b[key];
+      return d * sortDir;
+    });
+  }
+
+  function render(): void {
+    shown = sorted(filtered());
+
+    tbody.replaceChildren();
+    const frag = document.createDocumentFragment();
+    for (const d of shown.slice(0, limit)) {
+      const tr = document.createElement('tr');
+
+      const name = document.createElement('td');
+      const a = document.createElement('a');
+      a.href = link(d.id);
+      // The DAC's title is very often just the dataset id. Printing both
+      // then says the same thing twice, so the id line is dropped when it
+      // adds nothing.
+      a.textContent = d.title || d.id;
+      name.append(a);
+      if (isActive(d)) {
+        const badge = document.createElement('span');
+        badge.className = 'live';
+        badge.textContent = 'active';
+        name.append(badge);
+      }
+      if (d.title && d.title !== d.id) {
+        const id = document.createElement('span');
+        id.className = 'id';
+        id.textContent = d.id;
+        name.append(id);
+      }
+      tr.append(name);
+
+      const inst = document.createElement('td');
+      inst.textContent = d.institution;
+      tr.append(inst);
+
+      for (const t of [d.start, d.end]) {
+        const cell = document.createElement('td');
+        cell.className = 'when';
+        cell.textContent = date(t);
+        tr.append(cell);
+      }
+
+      const dur = document.createElement('td');
+      dur.className = 'num';
+      dur.textContent = days(d) >= 1 ? days(d).toFixed(0) : '<1';
+      tr.append(dur);
+
+      frag.append(tr);
+    }
+    tbody.append(frag);
+
+    const hiddenCount = shown.length - Math.min(limit, shown.length);
+    more.hidden = hiddenCount <= 0;
+    more.textContent = hiddenCount > 0
+      ? `${hiddenCount.toLocaleString()} more match — narrow the search, or `
+      : '';
+    if (hiddenCount > 0) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn';
+      btn.textContent = 'show all';
+      btn.addEventListener('click', () => { limit = Infinity; render(); });
+      more.append(btn);
+    }
+
+    drawMarkers();
+    say();
+  }
+
+  function drawMarkers(): void {
+    markers.clearLayers();
+    /* Markers for what the table is showing, capped: 2,500 circles is a
+       slideshow, and a map of every deployment ever is not a question
+       anybody asks. The status line says when the cap bit. */
+    const CAP = 500;
+    const subset = shown.slice(0, CAP);
+    for (const d of subset) {
+      const lat = (d.south + d.north) / 2;
+      const lon = (d.west + d.east) / 2;
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+      const live = isActive(d);
+      const marker = L.circleMarker([lat, lon], {
+        radius: live ? 6 : 4,
+        weight: live ? 2 : 1,
+        className: live ? 'marker-live' : 'marker-past',
+      });
+      // Built as DOM, not as an HTML string: the title and institution are
+      // written by whoever published the dataset, and this page's CSP has no
+      // `unsafe-inline` to fall back on if one of them ever contains markup.
+      const box = document.createElement('div');
+      const a = document.createElement('a');
+      a.href = link(d.id);
+      a.textContent = d.title || d.id;
+      box.append(a);
+      const meta = document.createElement('span');
+      meta.className = 'id';
+      meta.textContent = `${d.institution || 'unknown institution'} · ${date(d.start)} → ${date(d.end)}`;
+      box.append(document.createElement('br'), meta);
+      marker.bindPopup(box);
+      marker.addTo(markers);
+    }
+  }
+
+  /** Set when the catalog came from the snapshot rather than the server.
+      Kept out of `say()`'s computed line because `say()` runs on every
+      render and would otherwise erase it on the first keystroke. */
+  let notice = '';
+
+  function say(): void {
+    const total = all.length.toLocaleString();
+    const live = all.filter(isActive).length;
+    const showing = shown.length.toLocaleString();
+    const counts =
+      `${showing} of ${total} deployments · ${live} reporting in the last ${ACTIVE_DAYS} days`;
+    status.textContent = notice ? `${counts} — ${notice}` : counts;
+  }
+
+  function fillYears(): void {
+    const years = new Set<number>();
+    for (const d of all) {
+      const y = new Date(d.start * 1000).getUTCFullYear();
+      if (Number.isFinite(y)) years.add(y);
+    }
+    for (const y of [...years].sort((a, b) => b - a)) {
+      const opt = document.createElement('option');
+      opt.value = String(y);
+      opt.textContent = String(y);
+      yearSel.append(opt);
+    }
+  }
+
+  for (const el of [search, yearSel]) {
+    el.addEventListener('input', () => { limit = PAGE; render(); });
+  }
+  activeBtn.addEventListener('click', () => {
+    const on = activeBtn.getAttribute('aria-pressed') === 'true';
+    activeBtn.setAttribute('aria-pressed', String(!on));
+    limit = PAGE;
+    render();
+  });
+  for (const btn of document.querySelectorAll<HTMLButtonElement>('[data-sort]')) {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.sort as typeof sortKey;
+      if (key === sortKey) sortDir = -sortDir as 1 | -1;
+      else { sortKey = key; sortDir = key === 'title' || key === 'institution' ? 1 : -1; }
+      render();
+    });
+  }
+
+  /**
+   * The catalog: live, with the committed snapshot as the fallback.
+   *
+   * Live first because it is 572 KB in a quarter of a second — measured —
+   * and always current, where the snapshot is as old as the last deploy.
+   * The fallback is what keeps the page useful when the DAC is down, which
+   * is the one time a reader most wants to know what was out there.
+   */
+  async function load(): Promise<void> {
+    try {
+      all = await listDatasets();
+    } catch {
+      try {
+        const res = await fetch(withBase('/data/deployments.json'));
+        const doc = await res.json() as { fetched: number; deployments: DeploymentSummary[] };
+        all = doc.deployments;
+        notice = `the DAC did not answer, so this is a snapshot from ${date(doc.fetched)}`;
+        fillYears();
+        render();
+        return;
+      } catch {
+        status.textContent = 'The catalog could not be loaded, and no snapshot was available.';
+        return;
+      }
+    }
+    fillYears();
+    render();
+  }
+
+  void load();
+</script>
