@@ -114,8 +114,18 @@ export interface PlotOptions {
 }
 
 export interface PlotResult {
-  /** Points outside the reader's window. */
+  /**
+   * Points that fell outside the reader's window.
+   *
+   * **Finite points only.** A sample with no x or no y is not "outside the
+   * window", it is missing, and counting the two together produced a
+   * caption reading "3,014 outside the window" on a plot with no window set
+   * — which is not a limit the reader could widen, and reads as if the
+   * figure were hiding something they asked to see.
+   */
   hidden: number;
+  /** Points with no value on the x or y axis: a gap in the record. */
+  missing: number;
   /** Points with no value on the color axis. */
   uncolored: number;
   placed: Placed[];
@@ -171,7 +181,7 @@ export function plot(
 
   const n = Math.min(series.n, series.x.length, series.y.length);
   const empty: PlotResult = {
-    hidden: 0, uncolored: 0, placed: [], stride: 1, drawn: 0, total: n,
+    hidden: 0, missing: 0, uncolored: 0, placed: [], stride: 1, drawn: 0, total: n,
   };
   if (n < 2) return empty;
 
@@ -273,9 +283,15 @@ export function plot(
   });
 
   let hidden = 0;
+  let missing = 0;
   let uncolored = 0;
+  /* Split deliberately: a sample with no value is not a sample the window
+     excluded, and the caption says so separately. NaN fails every comparison,
+     so the two are indistinguishable unless asked apart. */
+  const present = (i: number): boolean =>
+    Number.isFinite(xs[i]) && Number.isFinite(ys[i]);
   const inside = (i: number): boolean =>
-    xs[i] >= xLoV && xs[i] <= xHiV && ys[i] >= yLoV && ys[i] <= yHiV;
+    present(i) && xs[i] >= xLoV && xs[i] <= xHiV && ys[i] >= yLoV && ys[i] <= yHiV;
 
   const cap = Math.max(1000, options.maxPoints ?? DEFAULT_MAX_POINTS);
   const step = Math.max(1, Math.ceil(n / cap));
@@ -306,7 +322,7 @@ export function plot(
       // A line has to lift its pen over a gap rather than draw a chord
       // straight across the excluded stretch, which would be a segment the
       // data does not support.
-      if (!inside(i)) { hidden++; pen = 'M'; continue; }
+      if (!inside(i)) { if (present(i)) hidden++; else missing++; pen = 'M'; continue; }
       d += `${pen} ${px(xs[i]).toFixed(1)} ${py(ys[i]).toFixed(1)} `;
       pen = 'L';
     }
@@ -332,7 +348,10 @@ export function plot(
     const bins: string[] = new Array(coloring ? BINS : 0).fill('');
     let plain = '';
     for (let i = 0; i < n; i += step) {
-      if (!inside(i)) { if (!drawsLine) hidden++; continue; }
+      if (!inside(i)) {
+        if (!drawsLine) { if (present(i)) hidden++; else missing++; }
+        continue;
+      }
       const d = `M ${px(xs[i]).toFixed(1)} ${py(ys[i]).toFixed(1)} h 0.8 `;
       if (!coloring || !cs) { if (drawsDots) plain += d; continue; }
       if (!Number.isFinite(cs[i])) { uncolored++; plain += d; continue; }
@@ -410,5 +429,5 @@ export function plot(
     svg.append(name);
   }
 
-  return { hidden, uncolored, placed, stride: step, drawn, total: n };
+  return { hidden, missing, uncolored, placed, stride: step, drawn, total: n };
 }

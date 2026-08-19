@@ -84,6 +84,27 @@ section('limits are a window, not a rescale');
   check('an empty window hides nothing', r.hidden, 0);
 }
 
+{
+  /* A gap in the record is not a point the window excluded, and reporting
+     the two as one number produced a caption reading "3,014 outside the
+     window" on a plot with no window set — a limit the reader could not
+     widen because they had never set it. NaN fails every comparison, so the
+     two are indistinguishable unless asked apart. */
+  const s = ramp(100);
+  for (let i = 10; i < 30; i++) s.y[i] = NaN;
+  const svg = fresh();
+  const r = plot(svg, s, { width: 400, height: 300 });
+  check('missing samples are counted as missing', r.missing, 20);
+  check('and not as excluded by a window', r.hidden, 0);
+  check('and are not drawn', r.drawn, 80);
+
+  const svg2 = fresh();
+  const r2 = plot(svg2, s, { width: 400, height: 300, yRange: [0, 50] });
+  ok('with a window, both are counted separately',
+    r2.missing === 20 && r2.hidden > 0,
+    `${r2.missing} missing, ${r2.hidden} outside`);
+}
+
 section('decimation is reported');
 
 {

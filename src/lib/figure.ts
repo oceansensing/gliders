@@ -226,7 +226,12 @@ export function makeFigure(root: HTMLElement, preset: Preset): Figure {
     const bits: string[] = [];
     bits.push(`${last.drawn.toLocaleString()} of ${last.total.toLocaleString()} samples`);
     if (last.stride > 1) bits.push(`every ${ordinal(last.stride)} drawn`);
+    /* "Outside the window" and "no value" are different facts and were once
+       one number: a plot with no limits set reported thousands of samples
+       outside a window the reader had not drawn, when they were simply rows
+       the glider never filled in. */
     if (last.hidden > 0) bits.push(`${last.hidden.toLocaleString()} outside the window`);
+    if (last.missing > 0) bits.push(`${last.missing.toLocaleString()} with no value here`);
     if (last.uncolored > 0) bits.push(`${last.uncolored.toLocaleString()} with no color value`);
     caption.textContent = bits.join(' · ') + (preset.note ? ` · ${preset.note}` : '');
   }
