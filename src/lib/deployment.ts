@@ -45,6 +45,18 @@ import { withBase } from './url.ts';
 const OVERVIEW_BIN = 1;
 const BIN_CANDIDATES = [2, 5, 10];
 
+/**
+ * The ladder used when the reader has picked a window rather than the whole
+ * mission. `0` is full rate — every sample the glider took.
+ *
+ * A day of an eleven-day deployment is a fortieth of it, so the samples the
+ * whole record could not afford fit inside the same budget with room to
+ * spare. The ladder still coarsens if the chosen window is itself enormous,
+ * which is the point of it being a ladder rather than a switch.
+ */
+const WINDOW_BIN = 0;
+const WINDOW_CANDIDATES = [1, 2, 5, 10];
+
 /** Sections open before the reader chooses anything. */
 const DEFAULT_SECTIONS = ['temperature', 'salinity', 'sigma0'];
 
@@ -68,10 +80,10 @@ export function startDeploymentPage(): void {
   const linksEl = at('[data-links]');
   const qcBox = at<HTMLInputElement>('[data-qc]');
   const trackNote = at('[data-track-note]');
-  const profileFrom = at<HTMLInputElement>('[data-profile-from]');
-  const profileTo = at<HTMLInputElement>('[data-profile-to]');
-  const profileBtn = at<HTMLButtonElement>('[data-profile-load]');
-  const profileNote = at('[data-profile-note]');
+  const fromBox = at<HTMLInputElement>('[data-from]');
+  const toBox = at<HTMLInputElement>('[data-to]');
+  const applyBtn = at<HTMLButtonElement>('[data-apply]');
+  const wholeBtn = at<HTMLButtonElement>('[data-whole]');
 
   const params = new URLSearchParams(location.search);
   const id = params.get('dataset');
@@ -92,6 +104,9 @@ export function startDeploymentPage(): void {
   let vars: Plottable[] = [];
   let selected = new Set<string>();
   let controller: AbortController | null = null;
+  /** The stretch of the deployment on screen, or null for all of it. */
+  let window_: { from: number; to: number } | null = null;
+  let restored = false;
   let track: Track | null = null;
   let tsFigure: Figure | null = null;
   let profileFigure: Figure | null = null;
@@ -157,10 +172,11 @@ export function startDeploymentPage(): void {
     nc.textContent = 'Download netCDF';
     linksEl.append(dacLink, ' · ', csv, ' · ', nc);
 
-    /* The profile window defaults to the last day of the mission, which is
-       what a reader checking on a live glider is after. */
-    profileFrom.value = localStamp(Math.max(info.start, info.end - 86400));
-    profileTo.value = localStamp(info.end);
+    /* The boxes show whatever is loaded, so they are a readout as much as a
+       control: after a drag they say what the drag selected. */
+    fromBox.value = localStamp(window_?.from ?? info.start);
+    toBox.value = localStamp(window_?.to ?? info.end);
+    wholeBtn.disabled = !window_;
   }
 
   function paintChips(): void {
@@ -266,6 +282,10 @@ export function startDeploymentPage(): void {
         height: 360,
         map: v.colormap,
         note: v.derived ? 'computed here from TEOS-10' : undefined,
+        /* Sweep across a feature to load it properly. The gesture is the one
+           a reader already makes at a section, so it is the one that asks
+           for more of it. */
+        onSelectX: (from, to) => void loadWindow(from, to),
       });
       sectionFigures.set(name, figure);
       figure.update(source());
@@ -284,6 +304,10 @@ export function startDeploymentPage(): void {
     const src = source();
     for (const figure of sectionFigures.values()) figure.update(src);
     tsFigure?.update(src);
+    /* The profile view is the same rows against depth rather than time, so
+       it reads whatever the window loaded — it used to fetch its own copy,
+       which was a second answer to keep in step with the first. */
+    profileFigure?.update(src);
     if (!table || !info) return;
 
     const lat = table.columns.get(info.latVar);
@@ -294,12 +318,17 @@ export function startDeploymentPage(): void {
       trackNote.textContent = 'coloured by time';
     }
 
+    const scope = window_
+      ? `${date(window_.from)} → ${date(window_.to)}`
+      : 'the whole deployment';
     resolutionEl.textContent = table.resolution.kind === 'binned'
-      ? `On screen: at most one sample per ${table.resolution.binMetres} m per `
-        + `profile — ${table.rows.toLocaleString()} rows. Where the glider `
-        + `sampled more coarsely than that, this is every sample it took. The `
-        + `profile explorer below loads a time window at full rate.`
-      : `On screen: every sample the server returned — ${table.rows.toLocaleString()} rows.`;
+      ? `On screen: ${scope}, at most one sample per `
+        + `${table.resolution.binMetres} m per profile — `
+        + `${table.rows.toLocaleString()} rows. Where the glider sampled more `
+        + `coarsely than that, this is every sample it took. Narrow the window `
+        + `above, or drag across a section, to load a stretch at full rate.`
+      : `On screen: ${scope} at full rate — every sample the glider took, `
+        + `${table.rows.toLocaleString()} rows.`;
     if (table.partial) {
       /* A window the server would not answer for. On this server that is
          also how an *empty* window arrives — a glider on the surface, a day
@@ -336,22 +365,35 @@ export function startDeploymentPage(): void {
   }
 
   async function load(): Promise<void> {
-    try {
-      info = await datasetInfo(id!, { signal: controller?.signal });
-    } catch (error) {
-      titleEl.textContent = id!;
-      say(`This deployment could not be read: ${(error as Error).message}`);
-      return;
+    /* **A fresh controller before anything is requested.** Reloading for a
+       new window aborts the one in flight, and the next `load` used to reach
+       `datasetInfo` still holding that aborted signal — so choosing a window
+       failed instantly with "signal is aborted without reason" and the page
+       emptied. The controller belongs to a load, not to the page. */
+    controller = new AbortController();
+    stopBtn.disabled = false;
+
+    /* The metadata cannot change between windows, so it is fetched once. */
+    if (!info) {
+      try {
+        info = await datasetInfo(id!, { signal: controller.signal });
+      } catch (error) {
+        titleEl.textContent = id!;
+        if ((error as Error).name !== 'AbortError') {
+          say(`This deployment could not be read: ${(error as Error).message}`);
+        }
+        return;
+      }
     }
 
     vars = plottable(info.variables);
-    paintHeader();
     restore();
+    paintHeader();
 
     // The figures exist before the data does, so the page has its shape from
     // the first paint rather than assembling itself as chunks land.
     const tsNode = document.querySelector<HTMLElement>('[data-figure="ts"]');
-    if (tsNode) {
+    if (tsNode && !tsFigure) {
       tsFigure = makeFigure(tsNode, {
         x: 'sa', y: 'ct', c: info.depthVar ?? 'depth',
         style: 'dots', dot: 2, height: 420, map: 'cmo.deep',
@@ -360,7 +402,7 @@ export function startDeploymentPage(): void {
       });
     }
     const profileNode = document.querySelector<HTMLElement>('[data-figure="profile"]');
-    if (profileNode) {
+    if (profileNode && !profileFigure) {
       profileFigure = makeFigure(profileNode, {
         x: 'temperature', y: info.depthVar ?? 'depth',
         c: info.timeVar, flipY: true, style: 'dots', dot: 2.5, height: 420,
@@ -368,10 +410,7 @@ export function startDeploymentPage(): void {
       });
     }
     const mapNode = document.querySelector<HTMLElement>('[data-map]');
-    if (mapNode) track = makeTrack(mapNode);
-
-    controller = new AbortController();
-    stopBtn.disabled = false;
+    if (mapNode && !track) track = makeTrack(mapNode);
 
     /* Everything non-ancillary, because the reader can chip any of it on
        without a second trip to the server — the overview is one pass over
@@ -381,11 +420,18 @@ export function startDeploymentPage(): void {
       .filter((v) => !v.ancillary && v.type !== 'String')
       .map((v) => v.name);
 
+    /* A chosen window starts the ladder at full rate; the whole mission
+       starts it at a metre. Either way the budget is what decides where it
+       stops — this only says where to begin looking. */
+    const windowed = window_ !== null;
+
     try {
       table = await fetchData(id!, info, {
         variables: wanted,
-        binMetres: OVERVIEW_BIN,
-        binCandidates: BIN_CANDIDATES,
+        start: window_?.from,
+        end: window_?.to,
+        binMetres: windowed ? WINDOW_BIN : OVERVIEW_BIN,
+        binCandidates: windowed ? WINDOW_CANDIDATES : BIN_CANDIDATES,
         applyQc: qcBox.checked,
         signal: controller.signal,
         onChunk: onProgress,
@@ -416,54 +462,65 @@ export function startDeploymentPage(): void {
     void load();
   });
 
-  // ---- the profile explorer ---------------------------------------------
+  // ---- the window --------------------------------------------------------
 
-  profileBtn.addEventListener('click', async () => {
+  /**
+   * Load a stretch of the deployment.
+   *
+   * Everything is re-fetched rather than filtered from what is already
+   * loaded, and that is the whole feature: the point of narrowing is to ask
+   * the server for the samples the whole mission could not afford. Filtering
+   * would leave the reader looking at the same 1 m overview through a
+   * smaller window and wondering why it had not got sharper.
+   */
+  async function loadWindow(from: number, to: number): Promise<void> {
     if (!info) return;
-    const from = Date.parse(`${profileFrom.value}Z`) / 1000;
-    const to = Date.parse(`${profileTo.value}Z`) / 1000;
     if (!Number.isFinite(from) || !Number.isFinite(to) || !(to > from)) {
-      profileNote.textContent = 'Pick a window that ends after it starts.';
+      say('Pick a window that ends after it starts.');
       return;
     }
-    profileBtn.disabled = true;
-    profileNote.textContent = 'Loading…';
-    try {
-      const full = await fetchData(id!, info, {
-        variables: info.variables.filter((v) => !v.ancillary && v.type !== 'String').map((v) => v.name),
-        start: from,
-        end: to,
-        applyQc: qcBox.checked,
-      });
-      const out = canDeriveOn(full)
-        ? await deriveOn(full)
-        : new Map<string, Float64Array>();
-      const columns = new Map(full.columns);
-      for (const [k, v] of out) columns.set(k, v);
-      profileFigure?.update({
-        columns, rows: full.rows, variables: vars, timeVar: info.timeVar,
-      });
-      profileNote.textContent =
-        `${full.rows.toLocaleString()} samples at full rate, ${date(from)} → ${date(to)}`;
-    } catch (error) {
-      profileNote.textContent = `Could not load: ${(error as Error).message}`;
-    } finally {
-      profileBtn.disabled = false;
-    }
-  });
-
-  const canDeriveOn = (data: TableData): boolean =>
-    Boolean(data.columns.get('salinity') && data.columns.get('temperature')
-      && info?.pressureVar && data.columns.get(info.pressureVar));
-
-  /** The profile window gets its own deriver: the page's one is memoized
-      against the overview's columns, and reusing it would hand back arrays
-      of the wrong length. */
-  async function deriveOn(data: TableData): Promise<Map<string, Float64Array>> {
-    const local = new Deriver();
-    const out = await local.compute(data, info!, ['sa', 'ct', 'sigma0', 'spice0', 'soundSpeed', 'rho', 'pt']);
-    return out.columns;
+    /* Clamped to the deployment, so a drag that overshoots the last profile
+       does not ask for a week of nothing. */
+    window_ = {
+      from: Math.max(from, info.start),
+      to: Math.min(to, info.end),
+    };
+    controller?.abort();
+    resetForReload();
+    remember();
+    await load();
   }
+
+  async function loadWhole(): Promise<void> {
+    window_ = null;
+    controller?.abort();
+    resetForReload();
+    remember();
+    await load();
+  }
+
+  /** Drop everything derived from the previous window. The deriver memoizes
+      against a row count, and the figures hold columns of the old length. */
+  function resetForReload(): void {
+    deriver.reset();
+    derivedColumns = new Map();
+    table = null;
+    for (const name of [...sectionFigures.keys()]) {
+      figuresEl.querySelector(`[data-section="${cssEscape(name)}"]`)?.remove();
+      sectionFigures.delete(name);
+    }
+    say('', false);
+  }
+
+  applyBtn.addEventListener('click', () => {
+    void loadWindow(readBox(fromBox), readBox(toBox));
+  });
+  wholeBtn.addEventListener('click', () => void loadWhole());
+
+  /** A `datetime-local` has no zone; every clock on this page is UTC, so it
+      is read as UTC rather than as the reader's own offset. */
+  const readBox = (input: HTMLInputElement): number =>
+    Date.parse(`${input.value}Z`) / 1000;
 
   // ---- the query string --------------------------------------------------
 
@@ -472,6 +529,16 @@ export function startDeploymentPage(): void {
     const names = wanted ? wanted.split(',').filter(Boolean) : DEFAULT_SECTIONS;
     selected = new Set(names.filter((n) => vars.some((v) => v.name === n)));
     if (params.get('qc') === 'off') qcBox.checked = false;
+    /* Only on the first load: after that `window_` is what the reader chose
+       and the query string is following it, not leading. */
+    if (!restored) {
+      const t0 = Number(params.get('t0'));
+      const t1 = Number(params.get('t1'));
+      if (Number.isFinite(t0) && Number.isFinite(t1) && t1 > t0 && t0 > 0) {
+        window_ = { from: t0, to: t1 };
+      }
+      restored = true;
+    }
   }
 
   function remember(): void {
@@ -481,6 +548,13 @@ export function startDeploymentPage(): void {
     else next.delete('vars');
     if (!qcBox.checked) next.set('qc', 'off');
     else next.delete('qc');
+    if (window_) {
+      next.set('t0', String(Math.round(window_.from)));
+      next.set('t1', String(Math.round(window_.to)));
+    } else {
+      next.delete('t0');
+      next.delete('t1');
+    }
     history.replaceState(null, '', `${location.pathname}?${next}`);
   }
 

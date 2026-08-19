@@ -160,11 +160,20 @@ export async function fetchData(
    * candidate is therefore measured with its own probe rather than
    * extrapolated, at the cost of one short request per step — and the step
    * is rare.
+   *
+   * **`binMetres: 0` puts full rate on the ladder as its finest rung**, which
+   * is what a reader asking for one day of an eleven-day mission should get:
+   * the window is a fortieth of the deployment, so every sample the glider
+   * took fits well inside the same budget the whole record could not. The
+   * caller decides where the ladder starts; the budget decides where it
+   * stops.
    */
-  const candidates = opts.binMetres
-    ? [opts.binMetres, ...(opts.binCandidates ?? [])
-        .filter((b) => b > opts.binMetres!)]
-    : [undefined];
+  const candidates: Array<number | undefined> = opts.binMetres === undefined
+    ? [undefined]
+    : [
+        opts.binMetres === 0 ? undefined : opts.binMetres,
+        ...(opts.binCandidates ?? []).filter((b) => b > opts.binMetres!),
+      ];
   const target = opts.targetRows ?? 250_000;
 
   let bin = candidates[0];

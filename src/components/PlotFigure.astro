@@ -222,6 +222,17 @@ const { title, id, hint } = Astro.props;
     pointer-events: none;
   }
 
+  /* The band drawn while a reader sweeps across a section to pick a time
+     range. `pointer-events: none` because it sits under the cursor for the
+     whole gesture and would otherwise swallow the pointerup that ends it. */
+  [data-figure] .select-band {
+    fill: var(--accent);
+    fill-opacity: 0.16;
+    stroke: var(--accent);
+    stroke-width: 1;
+    pointer-events: none;
+  }
+
   [data-figure] .isopycnal {
     fill: none;
     stroke: var(--text-muted);

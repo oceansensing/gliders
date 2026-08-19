@@ -239,6 +239,47 @@ section('the depth bin is chosen from the glider');
     seen.slice(4).every((b) => b === 10), seen.join(','));
 }
 
+section('a chosen window can be asked for at full rate');
+
+{
+  /* `binMetres: 0` puts full rate on the ladder as its finest rung. A day of
+     an eleven-day mission is a fortieth of it, so the samples the whole
+     record could not afford fit inside the same budget — which is the whole
+     reason narrowing the window is worth doing. */
+  const info = parseInfo('electa-20260807T1633', read('info-electa.json'));
+  const rows = fs.readFileSync('scripts/fixtures/erddap/rows-electa.jsonl', 'utf8');
+
+  const urls = [];
+  const record = async (url) => { urls.push(url); return new Response(rows, { status: 200 }); };
+
+  const day = await fetchData('electa-20260807T1633', info, {
+    variables: ['temperature'],
+    start: 1786665600, end: 1786665600 + 86400,
+    binMetres: 0, binCandidates: [1, 2, 5, 10], targetRows: 250_000,
+    fetchImpl: record, concurrency: 1, now: () => 0, maxChunks: 2,
+  });
+  check('a window that fits comes back unbinned', day.resolution.kind, 'full');
+  check('and names no bin', day.resolution.binMetres, undefined);
+  ok('so no request carries an orderByClosest',
+    urls.every((u) => !u.includes('orderByClosest')), urls[0].slice(-70));
+
+  /* The window itself has to reach the server, or "load this stretch" would
+     quietly re-fetch the whole deployment. */
+  ok('and the window is in the query',
+    urls[0].includes('time%3E=2026-08-14T00:00:00Z'), urls[0].slice(-120));
+
+  /* Still a ladder, not a switch: a window big enough to blow the budget
+     coarsens like any other. */
+  urls.length = 0;
+  const big = await fetchData('electa-20260807T1633', info, {
+    variables: ['temperature'],
+    start: 1786665600, end: 1786665600 + 200 * 86400,
+    binMetres: 0, binCandidates: [1, 2, 5, 10], targetRows: 100,
+    fetchImpl: record, concurrency: 1, now: () => 0, maxChunks: 2,
+  });
+  check('an over-budget window still coarsens', big.resolution.binMetres, 10);
+}
+
 section('dataset info, 2026 and 2018');
 
 {

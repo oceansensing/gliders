@@ -135,6 +135,12 @@ section('the figures are styled after they are cloned');
   ok('the axis has fill:none', /\[data-figure\][^{]*\.axis\s*\{[^}]*fill:\s*none/.test(css));
   ok('and so does the trace', /\[data-figure\][^{]*\.trace\s*\{[^}]*fill:\s*none/.test(css));
   ok('isopycnals are styled', /\[data-figure\][^{]*\.isopycnal\s*\{/.test(css));
+  /* The band drawn while sweeping a section for a time range. It is built at
+     runtime like everything else inside the SVG, and it must not take
+     pointer events — it sits under the cursor for the whole gesture and
+     would otherwise swallow the pointerup that ends it. */
+  ok('the selection band is styled and lets the pointer through',
+    /\[data-figure\][^{]*\.select-band\s*\{[^}]*pointer-events:\s*none/.test(css));
   ok('runtime-built chips are styled globally',
     /\[data-chips\][^{]*\.chip\s*\{/.test(css));
   ok('runtime-built table rows too', /\[data-rows\]\s*tr\s*\{/.test(css));
@@ -143,6 +149,30 @@ section('the figures are styled after they are cloned');
      Without it the map draws over the page's title — which it did. */
   ok('Leaflet’s stylesheet was bundled',
     /\.leaflet-container\s*\{/.test(css) && /overflow:\s*hidden/.test(css));
+}
+
+section('the window controls');
+
+{
+  const doc = parse('deployment/index.html');
+  for (const sel of ['[data-from]', '[data-to]', '[data-apply]', '[data-whole]']) {
+    ok(`${sel} is rendered`, doc.querySelector(sel) !== null);
+  }
+  ok('the two clocks take a date and a time',
+    doc.querySelector('[data-from]')?.getAttribute('type') === 'datetime-local');
+  /* Disabled until a window is chosen: there is nothing to go back to on a
+     page showing the whole deployment already. */
+  ok('“whole deployment” starts disabled',
+    doc.querySelector('[data-whole]')?.hasAttribute('disabled'));
+
+  /* The profile figure had its own window boxes and its own fetch, which was
+     a second way to ask the same question and a second answer to keep in
+     step. One window now governs every figure. */
+  ok('the profile figure has no window controls of its own',
+    doc.querySelector('[data-profile-from]') === null
+    && doc.querySelector('[data-profile-load]') === null);
+  ok('but the profile figure is still there',
+    doc.querySelector('[data-figure="profile"]') !== null);
 }
 
 section('the prototype figure is hidden');

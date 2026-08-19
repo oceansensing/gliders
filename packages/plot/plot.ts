@@ -151,6 +151,15 @@ export interface PlotResult {
   drawn: number;
   /** How many were considered. */
   total: number;
+  /**
+   * The projection and the window this draw used.
+   *
+   * Returned because a caller that wants to interpret a pointer position —
+   * a drag across a section, say — needs the same mapping the points were
+   * placed with, and recomputing it outside would be a second copy of the
+   * padding arithmetic that could drift from this one.
+   */
+  frame: Frame;
 }
 
 /** Enough digits to read the scale, few enough to fit the gutter reserved
@@ -196,8 +205,13 @@ export function plot(
   while (svg.lastChild && (svg.lastChild as Element).tagName !== 'title') svg.lastChild.remove();
 
   const n = Math.min(series.n, series.x.length, series.y.length);
+  const blankFrame: Frame = {
+    px: (x) => x, py: (y) => y, xLo: 0, xHi: 1, yLo: 0, yHi: 1,
+    left: pad.left, right: width - pad.right, top: pad.top, bottom: height - pad.bottom,
+  };
   const empty: PlotResult = {
-    hidden: 0, missing: 0, uncolored: 0, placed: [], stride: 1, drawn: 0, total: n,
+    hidden: 0, missing: 0, uncolored: 0, placed: [], stride: 1, drawn: 0,
+    total: n, frame: blankFrame,
   };
   if (n < 2) return empty;
 
@@ -288,15 +302,17 @@ export function plot(
     svg.append(name);
   }
 
-  /* Between the axes and the points, so contours sit behind the data they
-     describe. Given the projection rather than the values: what it draws is
-     its own business, which is what keeps density out of this file. */
-  options.underlay?.(svg, {
+  const frame: Frame = {
     px, py,
     xLo: xLoV, xHi: xHiV, yLo: yLoV, yHi: yHiV,
     left: pad.left, right: width - pad.right,
     top: pad.top, bottom: height - pad.bottom,
-  });
+  };
+
+  /* Between the axes and the points, so contours sit behind the data they
+     describe. Given the projection rather than the values: what it draws is
+     its own business, which is what keeps density out of this file. */
+  options.underlay?.(svg, frame);
 
   let hidden = 0;
   let missing = 0;
@@ -445,5 +461,5 @@ export function plot(
     svg.append(name);
   }
 
-  return { hidden, missing, uncolored, placed, stride: step, drawn, total: n };
+  return { hidden, missing, uncolored, placed, stride: step, drawn, total: n, frame };
 }

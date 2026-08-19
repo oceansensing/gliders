@@ -40,6 +40,13 @@ export interface Preset {
   underlay?: PlotOptions['underlay'];
   /** Extra sentence appended to the caption. */
   note?: string;
+  /**
+   * Called when the reader drags across the figure horizontally, with the
+   * span they covered in data units. Only offered while the x axis is time,
+   * because "load this range" means something there and nothing on a T–S
+   * diagram, where x is salinity.
+   */
+  onSelectX?: (from: number, to: number) => void;
 }
 
 export interface Figure {
@@ -85,6 +92,10 @@ export function makeFigure(root: HTMLElement, preset: Preset): Figure {
 
   let source: Source | null = null;
   let last: PlotResult | null = null;
+  /** The projection the last draw used, for turning a pointer position back
+      into a data value. Comes from the engine rather than being recomputed
+      here, so the two cannot drift. */
+  let lastFrame: PlotResult['frame'] | null = null;
   let flip = preset.flipY ?? false;
 
   /* Filled once: the scales are a fixed list, not something the data
@@ -204,6 +215,7 @@ export function makeFigure(root: HTMLElement, preset: Preset): Figure {
     };
 
     last = plot(svg, series, options);
+    lastFrame = last.frame;
     say();
   }
 
@@ -247,11 +259,78 @@ export function makeFigure(root: HTMLElement, preset: Preset): Figure {
     }
   }
 
+  /**
+   * Dragging across the figure picks a time range.
+   *
+   * The gesture an oceanographer already makes at a section — see a feature,
+   * sweep across it — so it is the one that loads that stretch at a finer
+   * resolution. Offered only while the x axis is time: on a T–S diagram a
+   * horizontal drag spans salinity, and "load this range" has no meaning.
+   *
+   * The band is drawn in the SVG rather than as an overlay so it lands in
+   * the plot's own coordinate space and needs no separate positioning, and
+   * it is removed on every redraw by the engine's own child-clearing.
+   */
+  let band: SVGRectElement | null = null;
+  let dragFrom: number | null = null;
+
+  const toData = (clientX: number): number => {
+    const rect = svg.getBoundingClientRect();
+    const scale = rect.width / (svg.viewBox.baseVal.width || rect.width);
+    return (clientX - rect.left) / scale;
+  };
+
+  /** Screen x back to a data value, through the frame the last draw used. */
+  const dataAt = (screenX: number): number => {
+    if (!lastFrame) return NaN;
+    const { left, right, xLo, xHi } = lastFrame;
+    const t = (screenX - left) / (right - left);
+    return xLo + t * (xHi - xLo);
+  };
+
+  const selectable = (): boolean =>
+    Boolean(preset.onSelectX) && isTime(sel.x.value);
+
+  svg.addEventListener('pointerdown', (event) => {
+    if (!selectable() || event.button !== 0) return;
+    dragFrom = toData(event.clientX);
+    svg.setPointerCapture(event.pointerId);
+  });
+
+  svg.addEventListener('pointerup', (event) => {
+    if (dragFrom === null) return;
+    const to = toData(event.clientX);
+    const from = dragFrom;
+    dragFrom = null;
+    band?.remove();
+    band = null;
+    /* A click is not a drag. Below this the reader was pointing at a value,
+       not sweeping a range, and reloading the page's whole window from a
+       stray click would be startling. */
+    if (Math.abs(to - from) < 8) return;
+    const a = dataAt(Math.min(from, to));
+    const b = dataAt(Math.max(from, to));
+    if (Number.isFinite(a) && Number.isFinite(b) && b > a) preset.onSelectX!(a, b);
+  });
+
   /* The pointer readout. The dots are one path per color bin, so there is no
      element under the pointer to ask — the nearest placed point is found by
      search over what was actually drawn. */
   let ring: SVGCircleElement | null = null;
   svg.addEventListener('pointermove', (event) => {
+    if (dragFrom !== null && lastFrame) {
+      const x = toData(event.clientX);
+      if (!band) {
+        band = document.createElementNS(NS, 'rect');
+        band.setAttribute('class', 'select-band');
+        svg.append(band);
+      }
+      band.setAttribute('x', String(Math.min(dragFrom, x)));
+      band.setAttribute('width', String(Math.abs(x - dragFrom)));
+      band.setAttribute('y', String(lastFrame.top));
+      band.setAttribute('height', String(lastFrame.bottom - lastFrame.top));
+      return;
+    }
     if (!last || last.placed.length === 0) return;
     const rect = svg.getBoundingClientRect();
     const scale = rect.width / (svg.viewBox.baseVal.width || rect.width);

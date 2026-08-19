@@ -81,6 +81,17 @@ picture on screen quickly.
 Measured on `electa` after the change: 71,922 rows, first section at 566 ms,
 complete at 2.9 s.
 
+**A chosen window starts the ladder at full rate.** Narrowing is only worth
+doing if it buys resolution, so `binMetres: 0` puts "every sample the glider
+took" on the ladder as its finest rung and the same budget decides whether it
+fits. A day of an eleven-day mission is a fortieth of it, so it does:
+12 hours of `electa` is 5,588 rows unbinned, loaded in 1.8 s.
+
+The window is **re-fetched, not filtered** from what is already on screen.
+Filtering would leave the reader looking at the same 1 m overview through a
+smaller frame and wondering why it had not sharpened — the point of narrowing
+is to ask the server for the samples the whole record could not afford.
+
 **The first version sized its windows by row count, and that is the bug worth
 remembering.** It is the obvious design and it fails exactly because of (2):
 fed a binned request the estimator sees a low row rate, concludes a 30-day
@@ -138,6 +149,12 @@ Each of these shipped, was found by running the thing, and now has a gate.
   name it does not know rather than throwing. So every section drew
   perfectly, in entirely the wrong colours, with nothing anywhere saying so.
   `test:plot` now compares every name the site asks for against the table.
+- **Reloading for a new window aborted itself.** The page kept one
+  `AbortController`; choosing a window aborted the fetch in flight and then
+  called `load`, which reached `datasetInfo` still holding that aborted
+  signal. Every window selection failed instantly with "signal is aborted
+  without reason" and emptied the page. The controller belongs to a load, not
+  to the page, and is created at the top of one.
 - **The plot's point cap was the binding constraint, not the browser.** It
   was 50,000, inherited from a decoder whose limit was 4,000 — so a deep
   two-month deployment was drawn at every third point before the reader had

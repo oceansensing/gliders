@@ -13,6 +13,22 @@ import PlotFigure from './PlotFigure.astro';
       <button class="btn" type="button" data-stop>Stop</button>
     </div>
     <p class="problem" data-problem hidden></p>
+
+    <div class="window" data-window>
+      <label>
+        <span class="eyebrow">from</span>
+        <input class="field" type="datetime-local" data-from />
+      </label>
+      <label>
+        <span class="eyebrow">to</span>
+        <input class="field" type="datetime-local" data-to />
+      </label>
+      <button class="btn" type="button" data-apply>Load this window</button>
+      <button class="btn" type="button" data-whole disabled>Whole deployment</button>
+      <span class="mono muted hint" data-window-hint
+        >or drag across any section below</span
+      >
+    </div>
   </header>
 
   <section class="pair">
@@ -38,24 +54,19 @@ import PlotFigure from './PlotFigure.astro';
     <div data-figures></div>
   </section>
 
+  <!--
+    Profiles: the same rows as the sections, drawn against depth instead of
+    time. It had its own window controls and its own fetch, which was a
+    second way to ask the same question and a second answer to keep in step
+    with the first. The window at the top of the page now governs every
+    figure, so this reads whatever is loaded.
+  -->
   <section class="profiles">
     <PlotFigure
       id="profile"
       title="Profiles"
-      hint="Pick a variable and a time window to load at full resolution."
+      hint="Every profile in the loaded window, against depth."
     />
-    <div class="controls">
-      <label>
-        <span class="eyebrow">from</span>
-        <input class="field" type="datetime-local" data-profile-from />
-      </label>
-      <label>
-        <span class="eyebrow">to</span>
-        <input class="field" type="datetime-local" data-profile-to />
-      </label>
-      <button class="btn" type="button" data-profile-load>Load full resolution</button>
-      <span class="mono muted" data-profile-note></span>
-    </div>
   </section>
 
   <details class="aside">
@@ -119,6 +130,24 @@ import PlotFigure from './PlotFigure.astro';
     color: var(--text);
     border-inline-start: 3px solid var(--accent);
     padding-inline-start: var(--space-sm);
+  }
+
+  .window {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--space-xs) var(--space-sm);
+    margin-block-start: var(--space-md);
+  }
+
+  .window label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .hint {
+    align-self: center;
   }
 
   .pair {
