@@ -382,7 +382,7 @@ export function startDeploymentPage(): void {
     if (key === trackColourKey) return;
     trackColourKey = key;
 
-    const keep = trackColour.value;
+    const keep = trackColour.value || wantedTrack || '';
     trackColour.replaceChildren();
     for (const v of options) {
       const opt = document.createElement('option');
@@ -391,9 +391,14 @@ export function startDeploymentPage(): void {
       trackColour.append(opt);
     }
     trackColour.value = options.some((v) => v.name === keep) ? keep : info.timeVar;
+    /* Honoured once; after that the reader's own choice is what `keep`
+       carries, and a stale link value must not keep overriding it. */
+    if (trackColour.value === wantedTrack) wantedTrack = null;
   }
 
   let trackColourKey = '';
+  /** A colour asked for by the link, until the menu exists to honour it. */
+  let wantedTrack: string | null = null;
 
   /** True when the column exists in what is loaded *or* derived and holds a
       value somewhere — a chip's worth of data, for the map's menu. */
@@ -610,8 +615,12 @@ export function startDeploymentPage(): void {
     const names = wanted ? wanted.split(',').filter(Boolean) : DEFAULT_SECTIONS;
     selected = new Set(names.filter((n) => vars.some((v) => v.name === n)));
     if (params.get('qc') === 'off') qcBox.checked = false;
-    const wantedTrack = params.get('track');
-    if (wantedTrack && !trackColour.value) trackColour.value = wantedTrack;
+    /* Held rather than applied: the select has no options until the first
+       chunk reveals which columns carry data, and assigning a value to an
+       empty select does nothing at all — so the link's choice was silently
+       dropped and the map fell back to time. `fillTrackColours` applies it
+       once there is something to apply it to. */
+    wantedTrack = params.get('track') ?? wantedTrack;
     /* Only on the first load: after that `window_` is what the reader chose
        and the query string is following it, not leading. */
     if (!restored) {
