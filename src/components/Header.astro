@@ -1,5 +1,5 @@
 ---
-import { NAV, SITE } from '../config';
+import { LAB, NAV, SITE } from '../config';
 import { isCurrent, withBase } from '../lib/url';
 import ThemeToggle from './ThemeToggle.astro';
 
@@ -12,9 +12,19 @@ const { wide = false } = Astro.props;
 
 <header>
   <div class={`container inner${wide ? ' wide' : ''}`}>
-    <a class="wordmark" href={withBase('/')}>
-      {SITE.title}<span class="wordmark-sub">{SITE.fullName}</span>
-    </a>
+    <div class="brand">
+      {/* The lab this site belongs to, above the wordmark rather than inside
+          `nav`. Two reasons, and the second is the load-bearing one: it is a
+          parent rather than a peer of this site's own pages, and `test:pages`
+          asserts every `nav a` points into the base path — an absolute URL in
+          there would fail a check that is right. The footer has carried this
+          link since the site was built; a reader deep in a figure page never
+          sees it. */}
+      <a class="lab" href={LAB.url}>← {LAB.name}</a>
+      <a class="wordmark" href={withBase('/')}>
+        {SITE.title}<span class="wordmark-sub">{SITE.fullName}</span>
+      </a>
+    </div>
     <nav aria-label="Main">
       <ul>
         {
@@ -62,6 +72,25 @@ const { wide = false } = Astro.props;
   .wordmark:hover {
     text-decoration: none;
     color: var(--accent);
+  }
+
+  .brand {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xs);
+  }
+
+  .lab {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    align-self: flex-start;
+    line-height: 1.2;
+  }
+
+  .lab:hover {
+    color: var(--accent);
+    text-decoration: none;
   }
 
   .wordmark-sub {

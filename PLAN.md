@@ -61,7 +61,16 @@ gates the deploy and runs entirely offline.
 - Publication-quality PNG export from every figure and the map.
 - Light/dark theme, WCAG AA on every shipped colour pair, and the map's
   markers measured against the basemap rather than the page.
-- ~455 offline checks across seven suites.
+- **The way back to the lab, in the header** — `← C4PO` above the wordmark,
+  from `LAB.url`. The footer has carried the same link since the site was
+  built, which is why the header one is gated rather than trusted: losing it
+  degrades to a link that still exists further down the page, so nothing
+  looks broken. It sits outside `nav` deliberately — it is a parent rather
+  than a peer of this site's pages, and `test:pages` asserts every `nav a`
+  points into the base path, which an absolute URL would fail. Both claims
+  are checked, and mutation-tested by deleting the link and by moving it
+  into the nav.
+- ~626 offline checks across seven suites.
 
 ---
 

@@ -467,6 +467,32 @@ section('the chrome');
   const nav = [...doc.querySelectorAll('nav a')].map((a) => a.getAttribute('href'));
   ok('the nav points into the base path', nav.every((h) => h.startsWith(`${BASE}/`)),
     nav.join(', '));
+
+  /* The way back to the lab, in the header.
+   *
+   * The footer has carried this link since the site was built, which is
+   * exactly why the header one needs a check: losing it degrades to a link
+   * that still exists somewhere further down the page, so nothing looks
+   * broken. A fallback is a disguise.
+   *
+   * The expected address is read out of `src/config.ts` rather than written
+   * here, so this tracks `LAB.url` instead of drifting from it.
+   *
+   * It must sit **outside** `nav` — an absolute URL in there would fail the
+   * base-path check above, which is right about what a nav is for. */
+  const labUrl = /url: *'([^']+)'/.exec(
+    /export const LAB = \{(.*?)\} as const;/s.exec(
+      fs.readFileSync('src/config.ts', 'utf8'))?.[1] ?? '')?.[1];
+  ok('config declares a lab URL for the header to use', typeof labUrl === 'string',
+    String(labUrl));
+
+  const header = doc.querySelector('header');
+  const labLinks = [...(header?.querySelectorAll('a') ?? [])]
+    .filter((a) => a.getAttribute('href') === labUrl);
+  ok('the header links back to the lab', labLinks.length === 1,
+    `${labLinks.length} link(s) to ${labUrl}`);
+  ok('and it is outside the nav, so the base-path check still means something',
+    labLinks.length === 1 && labLinks[0].closest('nav') === null);
 }
 
 done();
