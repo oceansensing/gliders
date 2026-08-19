@@ -296,7 +296,10 @@ export function makeFigure(root: HTMLElement, preset: Preset): Figure {
        the glider never filled in. */
     if (last.hidden > 0) bits.push(`${last.hidden.toLocaleString()} outside the window`);
     if (last.missing > 0) bits.push(`${last.missing.toLocaleString()} with no value here`);
-    if (last.uncolored > 0) bits.push(`${last.uncolored.toLocaleString()} with no color value`);
+    if (last.uncolored > 0) {
+      bits.push(`${last.uncolored.toLocaleString()} not shown: no ${
+        meta(sel.c.value)?.short ?? 'value'} there`);
+    }
     /* Said out loud, because the colour bar's numbers are not the data's
        full range and a reader is entitled to know which they are looking
        at. */

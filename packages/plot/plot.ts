@@ -142,7 +142,8 @@ export interface PlotResult {
   hidden: number;
   /** Points with no value on the x or y axis: a gap in the record. */
   missing: number;
-  /** Points with no value on the color axis. */
+  /** Points with no value on the color axis. Counted, and **not drawn** —
+      see the note in `plot`. */
   uncolored: number;
   placed: Placed[];
   /** Every nth point was drawn. 1 when nothing was skipped. */
@@ -337,10 +338,30 @@ export function plot(
   // at a line still expects to be told what is under the pointer. Same
   // decimation as the drawing, so the readout can only ever name a point
   // that is actually on screen.
+  /**
+   * **A point with no value on the colour axis is not drawn.**
+   *
+   * It used to be, in the structural trace colour, on the reasoning that a
+   * reader should see where samples exist. That is right for an uncoloured
+   * plot and wrong for a coloured one, and a real case shows how wrong: an
+   * optical sensor samples far less often than the CTD, so a chlorophyll
+   * section was 71,867 accent-blue dots with no chlorophyll behind 1,284
+   * that had it. The figure showed the CTD's sampling pattern and read as
+   * though chlorophyll had been measured everywhere.
+   *
+   * Omitting them is also what every plotting library does with a NaN in the
+   * colour array. They are still counted, and the caption still reports
+   * them, so nothing is hidden — it is just not painted as data.
+   */
+  const skip = (i: number): boolean => coloring && !!cs && !Number.isFinite(cs[i]);
+
   const placed: Placed[] = [];
   let drawn = 0;
   for (let i = 0; i < n; i += step) {
     if (!inside(i)) continue;
+    /* Out of the hover search too: pointing at a gap should name the nearest
+       real measurement, not a point that was never drawn. */
+    if (skip(i)) continue;
     drawn++;
     placed.push({
       x: xs[i], y: ys[i], c: cs ? cs[i] : NaN, sx: px(xs[i]), sy: py(ys[i]), i,
@@ -354,7 +375,11 @@ export function plot(
       // A line has to lift its pen over a gap rather than draw a chord
       // straight across the excluded stretch, which would be a segment the
       // data does not support.
-      if (!inside(i)) { if (present(i)) hidden++; else missing++; pen = 'M'; continue; }
+      if (!inside(i) || skip(i)) {
+        if (!inside(i)) { if (present(i)) hidden++; else missing++; }
+        pen = 'M';
+        continue;
+      }
       d += `${pen} ${px(xs[i]).toFixed(1)} ${py(ys[i]).toFixed(1)} `;
       pen = 'L';
     }
@@ -386,7 +411,7 @@ export function plot(
       }
       const d = `M ${px(xs[i]).toFixed(1)} ${py(ys[i]).toFixed(1)} h 0.8 `;
       if (!coloring || !cs) { if (drawsDots) plain += d; continue; }
-      if (!Number.isFinite(cs[i])) { uncolored++; plain += d; continue; }
+      if (!Number.isFinite(cs[i])) { uncolored++; continue; }
       const t = (cs[i] - cLoV) / (cHiV - cLoV);
       bins[Math.min(BINS - 1, Math.max(0, Math.floor(t * BINS)))] += d;
     }

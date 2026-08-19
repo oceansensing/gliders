@@ -148,11 +148,26 @@ section('colour');
 }
 
 {
+  /* **A point with no colour value is counted and not drawn.**
+     It used to be drawn in the structural accent colour, which is right for
+     an uncoloured plot and wrong for a coloured one: an optical sensor
+     samples far less often than the CTD, so a real chlorophyll section was
+     71,867 blue dots with no chlorophyll behind 1,284 that had it, and read
+     as though chlorophyll had been measured everywhere. */
   const withGaps = ramp(100);
   for (let i = 40; i < 60; i++) withGaps.c[i] = NaN;
   const svg = fresh();
   const r = plot(svg, withGaps, { width: 400, height: 300, cLabel: 'c' });
   check('points with no colour value are counted', r.uncolored, 20);
+  check('and are not drawn', r.drawn, 80);
+  ok('nor offered to the hover readout',
+    r.placed.every((p) => Number.isFinite(p.c)), `${r.placed.length} placed`);
+
+  /* Only when there *is* a colour axis: an uncoloured plot draws everything
+     it was given, which is what the decoder this engine came from does. */
+  const svg2 = fresh();
+  const r2 = plot(svg2, withGaps, { width: 400, height: 300 });
+  check('an uncoloured plot still draws them all', r2.drawn, 100);
 }
 
 section('a line lifts its pen over a gap');

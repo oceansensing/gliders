@@ -251,6 +251,25 @@ sensor.
 The same rule colours the track, whose chlorophyll legend read
 `-0.08 – 8.54 µg/L` before it and `0 – 6.64 µg/L` after.
 
+## A point with no colour value is not drawn
+
+It used to be, in the structural accent colour, so a reader could see where
+samples existed. That is right for an uncoloured plot and wrong for a
+coloured one, and chlorophyll shows how wrong: the optical sensor samples far
+less often than the CTD, so a chlorophyll section was **71,867 accent-blue
+dots with no chlorophyll behind 1,284 that had it**. The figure showed the
+CTD's sampling pattern and read as though chlorophyll had been measured
+everywhere; the subsurface maximum was invisible under it.
+
+Omitting them is also what every plotting library does with a NaN in the
+colour array. They are still counted and the caption still reports them —
+"71,867 not shown: no chl there" — so nothing is hidden, it is just not
+painted as data. They are kept out of the hover search too: pointing at a gap
+should name the nearest real measurement.
+
+Only when there *is* a colour axis. An uncoloured plot draws everything it
+was given, which is what the decoder this engine came from does.
+
 ## A depth axis starts at the surface
 
 The profile panels open with their y range pinned to 0. Left to the data the
