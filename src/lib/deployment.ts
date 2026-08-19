@@ -16,9 +16,9 @@ import {
   datasetInfo, fetchData, datasetPageUrl, tabledapUrl, DEFAULT_BASE,
   type DatasetInfo, type Progress, type TableData,
 } from '@c4po/erddap';
-import { COLORMAPS, knownColormap, sample } from '@c4po/plot';
 import { makeFigure, type Figure, type Source } from './figure.ts';
 import { makeTrack, type Track } from './track.ts';
+import { makeTrackLegend } from './track-legend.ts';
 import { isopycnalUnderlay } from './isopycnals.ts';
 import { plottable, type Plottable } from './variables.ts';
 import { Deriver } from './derived.ts';
@@ -80,13 +80,6 @@ export function startDeploymentPage(): void {
   const resolutionEl = at('[data-resolution]');
   const linksEl = at('[data-links]');
   const qcBox = at<HTMLInputElement>('[data-qc]');
-  const trackNote = at('[data-track-note]');
-  const trackColour = at<HTMLSelectElement>('[data-track-colour]');
-  const trackMap = at<HTMLSelectElement>('[data-track-map]');
-  const trackRamp = at('[data-track-ramp]');
-  const trackLo = at<HTMLInputElement>('[data-track-lo]');
-  const trackHi = at<HTMLInputElement>('[data-track-hi]');
-  const trackAuto = at<HTMLButtonElement>('[data-track-auto]');
   const fromBox = at<HTMLInputElement>('[data-from]');
   const toBox = at<HTMLInputElement>('[data-to]');
   const applyBtn = at<HTMLButtonElement>('[data-apply]');
@@ -344,189 +337,26 @@ export function startDeploymentPage(): void {
   }
 
   /**
-   * The track, coloured by whatever the reader picked.
+   * The map's legend, shared with the local-files page.
    *
-   * The value that reaches the map is the **shallowest** one in each
-   * profile — a track coloured by temperature is asking what the water was
-   * like where the glider surfaced, not what it was at the bottom of the
-   * dive. `makeTrack` does that reduction; this decides which column and
-   * which scale it uses.
+   * It reads the page's columns through the accessors below rather than
+   * holding them, so it always draws whatever the current window loaded.
    */
-  function paintTrack(): void {
-    if (!track || !table || !info) return;
-    const src = source();
-    const lat = src.columns.get(info.latVar);
-    const lon = src.columns.get(info.lonVar);
-    const time = src.columns.get(info.timeVar);
-    if (!lat || !lon || !time) return;
-
-    fillTrackMaps();
-    fillTrackColours();
-    const name = trackColour.value;
-    const v = name && name !== info.timeVar ? src.columns.get(name) : undefined;
-    const meta = vars.find((x) => x.name === name);
-
-    /* The scale follows the variable until the reader picks one, then stays
-       put — the same rule the figures keep, and tracked by a flag rather
-       than by comparing against a default, so choosing viridis deliberately
-       is not mistaken for not having chosen. */
-    if (!trackMapTouched) {
-      trackMap.value = meta?.colormap ?? (name === info.timeVar ? 'cmo.thermal' : 'viridis');
-    }
-    paintTrackRamp();
-
-    const isTimeAxis = !v;
-    retypeRange(isTimeAxis);
-    const lo = readRange(trackLo, isTimeAxis);
-    const hi = readRange(trackHi, isTimeAxis);
-
-    track.update({
-      lon, lat, time, n: table.rows,
-      colour: v
-        ? { values: v, colormap: trackMap.value, depth: src.columns.get(info.depthVar ?? 'depth') }
-        : undefined,
-      colormap: trackMap.value,
-      range: lo !== null && hi !== null ? { lo, hi } : undefined,
-    });
-
-    /* The readout says what the colours actually span, and the placeholders
-       say what the data does — so a reader can see at a glance whether they
-       have narrowed it and what they narrowed it from. */
-    const auto = track.dataRange;
-    if (auto) {
-      trackLo.placeholder = isTimeAxis ? stampOf(auto.lo) : trim(auto.lo);
-      trackHi.placeholder = isTimeAxis ? stampOf(auto.hi) : trim(auto.hi);
-    }
-    const range = track.range;
-    if (!range) { trackNote.textContent = ''; return; }
-    const narrowed = auto && (range.lo !== auto.lo || range.hi !== auto.hi);
-    const text = v && meta
-      ? `${trim(range.lo)} – ${trim(range.hi)}${meta.units ? ` ${meta.units}` : ''}`
-      : `${date(range.lo)} → ${date(range.hi)}`;
-    trackNote.textContent = narrowed ? `${text} (set)` : text;
-  }
-
-  /** A range box is a clock on a time axis and a number otherwise — an epoch
-      is not something anyone types. Switching wipes the value, because the
-      old one means nothing on the new axis. */
-  function retypeRange(isTime: boolean): void {
-    const want = isTime ? 'datetime-local' : 'number';
-    for (const box of [trackLo, trackHi]) {
-      if (box.type !== want) {
-        box.type = want;
-        box.value = '';
-      }
-    }
-  }
-
-  const readRange = (box: HTMLInputElement, isTime: boolean): number | null => {
-    const raw = box.value.trim();
-    if (!raw) return null;
-    const v = isTime ? Date.parse(`${raw}Z`) / 1000 : Number(raw);
-    return Number.isFinite(v) ? v : null;
-  };
-
-  const stampOf = (t: number): string =>
-    Number.isFinite(t) ? new Date(t * 1000).toISOString().slice(0, 16) : '';
-
-  /** The colour menu, filled from what the deployment actually has. */
-  function fillTrackColours(): void {
-    if (!info) return;
-    const options = vars.filter((v) =>
-      (v.name === info!.timeVar || v.section) && hasAnyIn(v.name));
-    const key = options.map((v) => v.name).join(',');
-    if (key === trackColourKey) return;
-    trackColourKey = key;
-
-    const keep = trackColour.value || wantedTrack || '';
-    trackColour.replaceChildren();
-    for (const v of options) {
-      const opt = document.createElement('option');
-      opt.value = v.name;
-      opt.textContent = v.units ? `${v.label} (${v.units})` : v.label;
-      trackColour.append(opt);
-    }
-    trackColour.value = options.some((v) => v.name === keep) ? keep : info.timeVar;
-    /* Honoured once; after that the reader's own choice is what `keep`
-       carries, and a stale link value must not keep overriding it. */
-    if (trackColour.value === wantedTrack) wantedTrack = null;
-  }
-
-  let trackColourKey = '';
-  let trackMapTouched = false;
-
-  /** The scale menu, filled once — the list is fixed, not something the data
-      decides. */
-  let pendingTrackMap: string | null = null;
-
-  function fillTrackMaps(): void {
-    if (trackMap.options.length) return;
-    for (const cmap of Object.keys(COLORMAPS)) {
-      const opt = document.createElement('option');
-      opt.value = cmap;
-      opt.textContent = cmap;
-      trackMap.append(opt);
-    }
-    /* A link's choice, applied now that there is a menu to apply it to —
-       the same trap the colour variable fell into: assigning to an empty
-       select does nothing at all. */
-    if (pendingTrackMap) {
-      trackMap.value = pendingTrackMap;
-      pendingTrackMap = null;
-    }
-  }
-
-  function paintTrackRamp(): void {
-    const stops = 20;
-    trackRamp.replaceChildren();
-    for (let i = 0; i < stops; i++) {
-      const cell = document.createElement('span');
-      cell.style.background = sample(trackMap.value, (i + 0.5) / stops);
-      trackRamp.append(cell);
-    }
-  }
-  /** A colour asked for by the link, until the menu exists to honour it. */
-  let wantedTrack: string | null = null;
-
-  /** True when the column exists in what is loaded *or* derived and holds a
-      value somewhere — a chip's worth of data, for the map's menu. */
-  const hasAnyIn = (name: string): boolean => {
-    const col = table?.columns.get(name) ?? derivedColumns.get(name);
-    if (!col) return false;
-    for (let i = 0; i < col.length; i++) if (col[i] === col[i]) return true;
-    return false;
-  };
-
-  trackColour.addEventListener('change', () => {
-    /* A new variable brings its own conventional scale back, unless the
-       reader has expressed a preference — and its own range always, because
-       limits set for temperature mean nothing on salinity. */
-    trackMapTouched = false;
-    trackLo.value = '';
-    trackHi.value = '';
-    paintTrack();
-    remember();
+  const legend = makeTrackLegend(root, {
+    track: () => track,
+    source: () => (table ? source() : null),
+    axes: () => (info
+      ? {
+          timeVar: info.timeVar,
+          latVar: info.latVar,
+          lonVar: info.lonVar,
+          depthVar: info.depthVar ?? 'depth',
+        }
+      : null),
+    onChange: () => remember(),
   });
 
-  trackMap.addEventListener('change', () => {
-    trackMapTouched = true;
-    paintTrack();
-    remember();
-  });
-
-  for (const box of [trackLo, trackHi]) {
-    box.addEventListener('input', () => {
-      paintTrack();
-      remember();
-    });
-  }
-
-  trackAuto.addEventListener('click', () => {
-    trackLo.value = '';
-    trackHi.value = '';
-    paintTrack();
-    remember();
-  });
+  const paintTrack = (): void => legend.paint();
 
   // ---- loading -----------------------------------------------------------
 
@@ -729,22 +559,13 @@ export function startDeploymentPage(): void {
     const names = wanted ? wanted.split(',').filter(Boolean) : DEFAULT_SECTIONS;
     selected = new Set(names.filter((n) => vars.some((v) => v.name === n)));
     if (params.get('qc') === 'off') qcBox.checked = false;
-    /* Held rather than applied: the select has no options until the first
-       chunk reveals which columns carry data, and assigning a value to an
-       empty select does nothing at all — so the link's choice was silently
-       dropped and the map fell back to time. `fillTrackColours` applies it
-       once there is something to apply it to. */
-    wantedTrack = params.get('track') ?? wantedTrack;
-    const wantedRange = params.get('trackrange');
-    if (wantedRange && !trackLo.value && !trackHi.value) {
-      const [a, b] = wantedRange.split(',');
-      if (a && b) { trackLo.value = a; trackHi.value = b; }
-    }
-    const wantedMap = params.get('trackmap');
-    if (wantedMap && knownColormap(wantedMap)) {
-      pendingTrackMap = wantedMap;
-      trackMapTouched = true;
-    }
+    /* Held by the legend until its menus exist to receive them: assigning a
+       value to an empty `<select>` does nothing at all. */
+    legend.restore({
+      variable: params.get('track'),
+      colormap: params.get('trackmap'),
+      range: params.get('trackrange'),
+    });
     /* Only on the first load: after that `window_` is what the reader chose
        and the query string is following it, not leading. */
     if (!restored) {
@@ -764,14 +585,11 @@ export function startDeploymentPage(): void {
     else next.delete('vars');
     if (!qcBox.checked) next.set('qc', 'off');
     else next.delete('qc');
-    if (trackColour.value && trackColour.value !== info?.timeVar) {
-      next.set('track', trackColour.value);
-    } else {
-      next.delete('track');
-    }
-    if (trackMapTouched && trackMap.value) next.set('trackmap', trackMap.value);
+    if (legend.variable && legend.variable !== info?.timeVar) next.set('track', legend.variable);
+    else next.delete('track');
+    if (legend.colormap) next.set('trackmap', legend.colormap);
     else next.delete('trackmap');
-    if (trackLo.value && trackHi.value) next.set('trackrange', `${trackLo.value},${trackHi.value}`);
+    if (legend.range) next.set('trackrange', legend.range.join(','));
     else next.delete('trackrange');
     if (window_) {
       next.set('t0', String(Math.round(window_.from)));
@@ -786,13 +604,6 @@ export function startDeploymentPage(): void {
   prototype = document.querySelector<HTMLElement>('[data-figure="prototype"]');
   void load();
 }
-
-const trim = (v: number): string => {
-  if (!Number.isFinite(v)) return '—';
-  const size = Math.abs(v);
-  if (size !== 0 && (size < 1e-3 || size >= 1e6)) return v.toExponential(2);
-  return String(Math.round(v * 100) / 100);
-};
 
 const date = (t: number): string =>
   Number.isFinite(t) ? new Date(t * 1000).toISOString().slice(0, 10) : '—';

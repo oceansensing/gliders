@@ -223,6 +223,22 @@ break silently: the SAAR atlas fetch, and the worker's own URL (which must be
 carries the base). `test:pages` reads the built HTML for root-absolute
 internal URLs and the sources for a bare `fetch('/…')`.
 
+## The track figure is shared, not copied
+
+The map, its title and the legend under it are one component
+(`TrackFigure.astro`) and one controller (`lib/track-legend.ts`), used by
+both the deployment viewer and the local-files page. The two callers differ
+in exactly one thing — a DAC dataset names its own time, position and depth
+columns, while a decoded Slocum table always uses `time`, `latitude`,
+`longitude`, `depth` — so that is a parameter (`TrackAxes`) and the rest is
+shared.
+
+This is the same split the figures already keep: `PlotFigure.astro` is the
+markup, `lib/figure.ts` is the behaviour, and three figures differ only by
+preset. It went in when the local page needed the legend the deployment page
+had: adding it there meant either a second copy of 470 lines or one shared
+piece, and a copy is a copy that drifts.
+
 ## Styling nodes that do not exist yet
 
 Section figures are built by **cloning a prototype** — a compiled Astro

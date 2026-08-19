@@ -9,6 +9,7 @@
 import { decodeFiles, toSource, type CacheStore, type DecodeReport } from './local.ts';
 import { makeFigure, type Figure, type Source } from './figure.ts';
 import { makeTrack, type Track } from './track.ts';
+import { makeTrackLegend, type TrackLegend } from './track-legend.ts';
 import { isopycnalUnderlay } from './isopycnals.ts';
 import { decodeAtlas, type SalinityAtlas } from '@c4po/teos10/atlas';
 import type { Deployment } from '@c4po/slocum';
@@ -37,6 +38,7 @@ export function startLocalPage(): void {
   let source: Source | null = null;
   let atlas: SalinityAtlas | null = null;
   let track: Track | null = null;
+  let legend: TrackLegend | null = null;
   let tsFigure: Figure | null = null;
   const sectionFigures = new Map<string, Figure>();
   const selected = new Set<string>(DEFAULT_SECTIONS);
@@ -173,12 +175,22 @@ export function startLocalPage(): void {
 
     const mapNode = document.querySelector<HTMLElement>('[data-map]');
     if (mapNode && !track) track = makeTrack(mapNode);
-    const lat = source.columns.get('latitude');
-    const lon = source.columns.get('longitude');
-    const time = source.columns.get('time');
-    if (track && lat && lon && time) {
-      track.update({ lon, lat, time, n: source.rows });
+    /* The same legend the deployment pages carry. A decoded Slocum table
+       always names its axes the same way, where a DAC dataset names its own
+       — which is the only thing the two callers differ in. */
+    if (!legend) {
+      legend = makeTrackLegend(document, {
+        track: () => track,
+        source: () => source,
+        axes: () => ({
+          timeVar: 'time',
+          latVar: 'latitude',
+          lonVar: 'longitude',
+          depthVar: 'depth',
+        }),
+      });
     }
+    legend.paint();
 
     const tsNode = document.querySelector<HTMLElement>('[data-figure="ts"]');
     if (tsNode && !tsFigure) {

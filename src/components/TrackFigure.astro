@@ -1,0 +1,205 @@
+---
+/**
+ * The map, its title, and the legend under it.
+ *
+ * One component for both pages: the deployment viewer and the local-files
+ * page show the same figure of the same thing, and a copy in each would be a
+ * copy that drifts. `makeTrackLegend` in `lib/track-legend.ts` wires it.
+ */
+---
+
+<figure class="map-figure">
+  <figcaption class="topline">
+    <h3 class="figure-title">Track</h3>
+  </figcaption>
+
+  <div class="map" data-map role="application" aria-label="Glider track"></div>
+
+  <!--
+    Under the map, where a legend belongs: the two menus decide what the
+    colours mean and the ramp and range say what they are, so they read as
+    one strip rather than as chrome above the picture.
+  -->
+  <div class="track-controls">
+    <div class="row">
+      <label class="eyebrow" for="track-colour">colour by</label>
+      <select class="field" id="track-colour" data-track-colour></select>
+    </div>
+    <div class="row">
+      <label class="eyebrow" for="track-map">scale</label>
+      <select class="field" id="track-map" data-track-map></select>
+      <span class="ramp" data-track-ramp aria-hidden="true"></span>
+    </div>
+    <div class="row">
+      <label class="eyebrow" for="track-lo">range</label>
+      <input
+        class="field"
+        type="number"
+        step="any"
+        id="track-lo"
+        data-track-lo
+        aria-label="Colour range, lowest value"
+      />
+      <input
+        class="field"
+        type="number"
+        step="any"
+        data-track-hi
+        aria-label="Colour range, highest value"
+      />
+      <button class="btn" type="button" data-track-auto>Auto</button>
+      <span class="mono muted" data-track-note></span>
+    </div>
+  </div>
+</figure>
+
+<style>
+  /* A flex column so the map can fill whatever height the figure is given.
+     Harmless in the stacked layout, where nothing constrains the height and
+     the map falls back to its floor. */
+  .map-figure {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  /**
+   * **The map's caption matches a figure's head, margins included.**
+   *
+   * `global.css` gives `.topline` a top margin of `--space-md`, written for
+   * a caption above a full-width map. Beside a `PlotFigure`, whose head has
+   * none, that put "Track" exactly 20 px below "T–S diagram" — two titles
+   * that are peers, sitting on different lines. Overriding only
+   * `margin-block-end`, as this rule first did, left the top margin in place
+   * and the misalignment with it.
+   */
+  .topline {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--space-sm);
+    margin-block: 0 var(--space-xs);
+    flex-wrap: wrap;
+  }
+
+  /**
+   * The map fills the column beside it rather than standing at a height of
+   * its own, so the two end level however tall the figure beside it is —
+   * and it stays right when the reader changes that figure's height.
+   *
+   * The floor is what the stacked layout uses: below the breakpoint each row
+   * sizes itself and `flex: 1` against no definite height would collapse the
+   * map to nothing. The stretch itself lives in the pages, which own the
+   * grid.
+   */
+  .map {
+    min-height: 22rem;
+    flex: 1 1 auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-subtle);
+  }
+
+  /* Three rows, each one line: what the colours mean, what scale they use,
+     and what range they span. Fixed content per row, so the strip's height
+     does not change with the choices — the map fills what this leaves it,
+     and a reflow here would resize the map under the reader. */
+  .track-controls {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xs);
+    margin-block-start: var(--space-xs);
+    min-width: 0;
+  }
+
+  /* **A fixed row height, because the range boxes change type.** On a time
+     axis they become `datetime-local`, which the browser renders about 2 px
+     taller than a `number` — and since the map fills what this strip leaves
+     it, switching the colour variable resized the map by that much. */
+  .track-controls .row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    min-width: 0;
+    min-height: 2.15rem;
+  }
+
+  /* One column for the three labels, so the controls line up down the strip
+     rather than starting at three different places. */
+  .track-controls .row > .eyebrow:first-child {
+    flex: 0 0 auto;
+    min-width: 7ch;
+    white-space: nowrap;
+  }
+
+  .track-controls select {
+    min-width: 0;
+  }
+
+  /**
+   * **A select is as wide as its widest option**, and the widest here is
+   * "Potential density anomaly σ₀ (kg/m³)". Left to size itself it pushed
+   * the caption onto three lines — an 85 px strip above a map that had to
+   * give up the same 65 px, because the map fills what the row leaves it.
+   */
+  [data-track-colour] {
+    flex: 1 1 auto;
+    max-width: 15rem;
+  }
+
+  [data-track-map] {
+    flex: 0 1 auto;
+    max-width: 10rem;
+  }
+
+  [data-track-lo],
+  [data-track-hi] {
+    flex: 0 1 7rem;
+    min-width: 0;
+  }
+
+  .ramp {
+    display: flex;
+    flex: 0 0 auto;
+    height: 1.4rem;
+    width: 4rem;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  /* The range changes length as the variable changes, so it is reserved:
+     otherwise picking a variable reflows the caption. */
+  [data-track-note] {
+    min-width: 15ch;
+    text-align: end;
+    white-space: nowrap;
+  }
+</style>
+
+<style is:global>
+  /* Built by the script, so it cannot be a scoped rule. */
+  [data-track-ramp] span {
+    flex: 1;
+  }
+
+  /* A stretch whose chosen variable has no value there. The path is still
+     where the glider went. */
+  .track-unknown {
+    stroke: var(--text-muted);
+    opacity: 0.35;
+  }
+
+  .track-start {
+    stroke: var(--text);
+    fill: var(--bg);
+    fill-opacity: 1;
+  }
+
+  .track-end {
+    stroke: var(--accent);
+    fill: var(--accent);
+    fill-opacity: 0.9;
+  }
+</style>

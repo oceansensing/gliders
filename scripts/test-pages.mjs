@@ -329,6 +329,32 @@ section('the map’s colour control and the profile pair');
     && /\.map[^{]*\{[^}]*flex:\s*(1|auto)/.test(css));
 }
 
+section('the local page carries the same track figure');
+
+{
+  /* The two pages show the same figure of the same thing, so they share one
+     component and one controller — `TrackFigure.astro` and
+     `lib/track-legend.ts`. A copy in each would be a copy that drifts. */
+  const local = parse('local/index.html');
+  const deployment = parse('deployment/index.html');
+  for (const sel of ['[data-map]', '[data-track-colour]', '[data-track-map]',
+    '[data-track-ramp]', '[data-track-lo]', '[data-track-hi]', '[data-track-auto]',
+    '[data-track-note]']) {
+    ok(`local/ has ${sel}`, local.querySelector(sel) !== null);
+  }
+  ok('and the same three legend rows as the deployment page',
+    local.querySelectorAll('.track-controls .row').length
+      === deployment.querySelectorAll('.track-controls .row').length,
+    `${local.querySelectorAll('.track-controls .row').length} rows`);
+  ok('with the shared figure title',
+    [...local.querySelectorAll('.figure-title')]
+      .some((t) => t.textContent.trim() === 'Track'));
+  /* The old caption said "coloured by time", which the legend now answers
+     and which would be a lie the moment a reader changed it. */
+  ok('and no stale hard-coded caption',
+    !read('local/index.html').includes('coloured by time'));
+}
+
 section('the prototype figure is hidden');
 
 {
