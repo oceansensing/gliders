@@ -13,9 +13,10 @@
  * it.
  */
 
-import { COLORMAPS, sample } from '@c4po/plot';
+import { COLORMAPS, exportName, sample, save } from '@c4po/plot';
 import type { Source } from './figure.ts';
 import type { Track } from './track.ts';
+import { exportMap } from './map-export.ts';
 
 /** Which columns hold the track's own axes. */
 export interface TrackAxes {
@@ -33,6 +34,8 @@ export interface TrackLegendOptions {
   axes: () => TrackAxes | null;
   /** Called after a reader-driven change, for saving to the query string. */
   onChange?: () => void;
+  /** What the exported PNG is called and titled. */
+  title?: () => string;
 }
 
 export interface TrackLegend {
@@ -60,6 +63,7 @@ export function makeTrackLegend(
   const lo = at<HTMLInputElement>('[data-track-lo]');
   const hi = at<HTMLInputElement>('[data-track-hi]');
   const auto = at<HTMLButtonElement>('[data-track-auto]');
+  const png = at<HTMLButtonElement>('[data-track-png]');
 
   let colourKey = '';
   let scaleTouched = false;
@@ -124,13 +128,25 @@ export function makeTrackLegend(
       hi.placeholder = isTime ? stamp(data.hi) : trim(data.hi);
     }
     const shown = map.range;
-    if (!shown) { note.textContent = ''; return; }
+    if (!shown) { note.textContent = ''; last = null; return; }
     const narrowed = data && (shown.lo !== data.lo || shown.hi !== data.hi);
     const text = values && meta
       ? `${trim(shown.lo)} – ${trim(shown.hi)}${meta.units ? ` ${meta.units}` : ''}`
       : `${day(shown.lo)} → ${day(shown.hi)}`;
     note.textContent = narrowed ? `${text} (set)` : text;
+    last = {
+      label: meta && values
+        ? `${meta.label}${meta.units ? ` (${meta.units})` : ''}`
+        : 'Time',
+      lo: values ? trim(shown.lo) : day(shown.lo),
+      hi: values ? trim(shown.hi) : day(shown.hi),
+      colormap: scale.value,
+    };
   }
+
+  /** The legend as the export needs it: what the colours are of, and what
+      the two ends mean. */
+  let last: { label: string; lo: string; hi: string; colormap: string } | null = null;
 
   /** The colour menu, from what this deployment actually carries. */
   function fillColours(src: Source, axes: TrackAxes): void {
@@ -222,6 +238,33 @@ export function makeTrackLegend(
     hi.value = '';
     paint();
     options.onChange?.();
+  });
+
+  png.addEventListener('click', async () => {
+    const map = options.track();
+    const container = root.querySelector<HTMLElement>('[data-map]');
+    if (!map || !container) return;
+    const label = png.textContent;
+    png.disabled = true;
+    png.textContent = 'Saving…';
+    try {
+      const title = options.title?.() ?? 'Glider track';
+      const blob = await exportMap(container, map, {
+        title,
+        caption: `Track coloured by ${last?.label ?? 'time'}${
+          last ? `, ${last.lo} to ${last.hi}` : ''}.`,
+        legend: last ?? undefined,
+      });
+      save(blob, exportName([title, 'track'], 'png'));
+    } catch (error) {
+      /* Said in the legend's own readout, which is the nearest thing this
+         figure has to a caption — a silent failure on a button that takes a
+         second to answer reads as a broken button. */
+      note.textContent = (error as Error).message;
+    } finally {
+      png.disabled = false;
+      png.textContent = label;
+    }
   });
 
   return {

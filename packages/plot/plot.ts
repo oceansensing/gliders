@@ -259,11 +259,19 @@ export function plot(
     return pad.top + up * (height - pad.top - pad.bottom);
   };
 
+  /* **A closed box, not two legs.** A frame on all four sides is what a
+     scientific figure wears, and it is what makes the plot area legible when
+     the figure is dropped into a document that has its own background: two
+     legs leave the top and right of the data floating against whatever is
+     behind them. Drawn as one path, so it is still a single node. */
   const axis = doc.createElementNS(NS, 'path');
   axis.setAttribute('class', 'axis');
   axis.setAttribute(
     'd',
-    `M ${pad.left} ${pad.top} L ${pad.left} ${height - pad.bottom} L ${width - pad.right} ${height - pad.bottom}`,
+    `M ${pad.left} ${pad.top} `
+    + `L ${pad.left} ${height - pad.bottom} `
+    + `L ${width - pad.right} ${height - pad.bottom} `
+    + `L ${width - pad.right} ${pad.top} Z`,
   );
   svg.append(axis);
 

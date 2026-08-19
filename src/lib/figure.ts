@@ -12,8 +12,8 @@
  */
 
 import {
-  plot, standalone, save, svgToPng, robustRange, COLORMAPS, DEFAULT_COLORMAP,
-  ROBUST_HIGH, ROBUST_LOW, sample,
+  plot, standalone, save, svgToPng, exportName, robustRange, COLORMAPS,
+  DEFAULT_COLORMAP, ROBUST_HIGH, ROBUST_LOW, sample,
   type PlotOptions, type PlotResult, type PlotStyle, type Series,
 } from '@c4po/plot';
 import { axisLabel, type Plottable } from './variables.ts';
@@ -541,13 +541,16 @@ export function makeFigure(root: HTMLElement, preset: Preset): Figure {
     pngBtn.disabled = true;
     pngBtn.textContent = 'Saving…';
     try {
-      const style = getComputedStyle(root);
-      const css = plotCss(style);
-      const markup = standalone(svg, css);
-      const w = svg.viewBox.baseVal.width;
-      const h = svg.viewBox.baseVal.height;
-      const blob = await svgToPng(markup, w, h, 2, style.getPropertyValue('--bg') || '#ffffff');
-      save(blob, `${sel.y.value}-vs-${sel.x.value}.png`);
+      /* The title and the caption go into the file. On screen they are HTML
+         beside the SVG; in a manuscript the figure has to say what it is and
+         how much of the record it shows without them. */
+      const heading = root.querySelector('.figure-title')?.textContent?.trim();
+      const page = standalone(svg, {
+        title: heading,
+        caption: caption.textContent ?? undefined,
+      });
+      const blob = await svgToPng(page.markup, page.width, page.height, 3, page.background);
+      save(blob, exportName([heading ?? '', 'vs', sel.x.value], 'png'));
     } catch (error) {
       caption.textContent = `The image could not be saved: ${(error as Error).message}`;
     } finally {
@@ -576,24 +579,6 @@ export function makeFigure(root: HTMLElement, preset: Preset): Figure {
       return { x: sel.x.value, y: sel.y.value, c: sel.c.value };
     },
   };
-}
-
-/** The rules a detached SVG needs to look like the one on screen. Resolved
-    from the live element so an export matches the reader's theme. */
-function plotCss(style: CSSStyleDeclaration): string {
-  const text = style.getPropertyValue('--text').trim() || '#16181d';
-  const muted = style.getPropertyValue('--text-muted').trim() || '#555b66';
-  const border = style.getPropertyValue('--border').trim() || '#dcdcd4';
-  const accent = style.getPropertyValue('--accent').trim() || '#0a5c8c';
-  const mono = style.getPropertyValue('--font-mono').trim() || 'monospace';
-  return `
-    .axis { fill: none; stroke: ${border}; stroke-width: 1; }
-    .trace { fill: none; stroke: ${accent}; stroke-width: 1.5; }
-    .tick { fill: ${muted}; font: 10px ${mono}; }
-    .axis-name { fill: ${text}; font: 11px ${mono}; }
-    .color-frame { fill: none; stroke: ${border}; }
-    .ring { display: none; }
-  `;
 }
 
 const clock = (v: number): string =>

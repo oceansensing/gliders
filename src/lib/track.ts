@@ -63,9 +63,20 @@ export interface TrackUpdate {
   range?: { lo: number; hi: number };
 }
 
+/** One drawn stretch of the path, kept so the export can redraw it on a
+    canvas at any scale rather than rasterising the on-screen SVG. */
+export interface Segment {
+  points: Array<[number, number]>;
+  colour: string | null;
+}
+
 export interface Track {
   /** Redraw from new columns. */
   update(next: TrackUpdate): void;
+  /** The stretches last drawn, in order. */
+  readonly segments: readonly Segment[];
+  /** Where the track starts and ends, for the export's markers. */
+  readonly ends: { first: [number, number]; last: [number, number] } | null;
   /** The range the last draw coloured over, for a legend. */
   readonly range: { lo: number; hi: number } | null;
   /** The range the data itself spans, whatever the draw was told to use —
@@ -80,6 +91,11 @@ export interface Track {
 const TILES =
   'https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}';
 
+/** Required by Esri's terms, and drawn into the exported image as well as
+    shown on screen — a figure that leaves the credit behind on the page is a
+    figure that arrives in a paper uncredited. */
+export const ATTRIBUTION = 'Esri — GEBCO, NOAA, National Geographic';
+
 export function makeTrack(element: HTMLElement, options: TrackOptions = {}): Track {
   /* `fadeAnimation: false` because the fade buys nothing on a data map and
      costs a real failure: Leaflet drives it from `requestAnimationFrame`,
@@ -89,9 +105,16 @@ export function makeTrack(element: HTMLElement, options: TrackOptions = {}): Tra
      seen. They appear as they arrive now. */
   const map = L.map(element, { worldCopyJump: true, fadeAnimation: false })
     .setView([30, -60], 3);
+  /* **`crossOrigin` is what makes the PNG export possible at all.** Drawing
+     an image the browser fetched without CORS onto a canvas taints it, and a
+     tainted canvas throws a SecurityError on `toBlob` — so the export would
+     fail at the last step, after the work. Esri's tile server answers
+     `Access-Control-Allow-Origin: *` (checked), so asking for the tiles
+     anonymously costs nothing and keeps the canvas clean. */
   L.tileLayer(TILES, {
     maxZoom: 13,
-    attribution: 'Esri — GEBCO, NOAA, National Geographic',
+    crossOrigin: 'anonymous',
+    attribution: ATTRIBUTION,
   }).addTo(map);
 
   const lines = L.layerGroup().addTo(map);
@@ -99,6 +122,8 @@ export function makeTrack(element: HTMLElement, options: TrackOptions = {}): Tra
   let bounds: L.LatLngBounds | null = null;
   let range: { lo: number; hi: number } | null = null;
   let dataRange: { lo: number; hi: number } | null = null;
+  let segments: Segment[] = [];
+  let endPoints: { first: [number, number]; last: [number, number] } | null = null;
 
   /* **Leaflet measures its container once, at construction.** This map is
      built while the page is still assembling — the figures around it have no
@@ -134,6 +159,8 @@ export function makeTrack(element: HTMLElement, options: TrackOptions = {}): Tra
     ends.clearLayers();
     bounds = null;
     range = null;
+    segments = [];
+    endPoints = null;
 
     /* One position per profile, not per sample: every point in a dive shares
        a position on the DAC's `latitude`/`longitude`, so drawing all of them
@@ -232,9 +259,11 @@ export function makeTrack(element: HTMLElement, options: TrackOptions = {}): Tra
         ? Math.min(1, Math.max(0,
             ((mid.reduce((x, y) => x + y, 0) / mid.length) - lo) / (hi - lo)))
         : NaN;
+      const colour = Number.isFinite(t) ? sample(cmap, t) : null;
+      segments.push({ points: seg as Array<[number, number]>, colour });
       L.polyline(seg, {
-        color: Number.isFinite(t) ? sample(cmap, t) : undefined,
-        className: Number.isFinite(t) ? undefined : 'track-unknown',
+        color: colour ?? undefined,
+        className: colour ? undefined : 'track-unknown',
         weight: 2.5,
         opacity: 0.95,
       }).addTo(lines);
@@ -249,6 +278,7 @@ export function makeTrack(element: HTMLElement, options: TrackOptions = {}): Tra
       radius: 6, weight: 2, className: 'track-end',
     }).bindTooltip('last report').addTo(ends);
 
+    endPoints = { first: [first.lat, first.lon], last: [last.lat, last.lon] };
     bounds = L.latLngBounds(all);
     fit();
   }
@@ -261,5 +291,7 @@ export function makeTrack(element: HTMLElement, options: TrackOptions = {}): Tra
     update, map, fit,
     get range() { return range; },
     get dataRange() { return dataRange; },
+    get segments() { return segments; },
+    get ends() { return endPoints; },
   };
 }

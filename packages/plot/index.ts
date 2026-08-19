@@ -21,6 +21,7 @@ export {
   COLORMAPS, STANDARD, CMOCEAN, DEFAULT_COLORMAP, sample, knownColormap,
 } from './colormaps.ts';
 
-export { svgToPng, standalone, save } from './png.ts';
+export { svgToPng, standalone, save, exportName, PRINT } from './png.ts';
+export type { Standalone, StandaloneOptions } from './png.ts';
 
 export { robustRange, ROBUST_LOW, ROBUST_HIGH } from './robust.ts';

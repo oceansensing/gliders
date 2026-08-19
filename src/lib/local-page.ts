@@ -188,6 +188,10 @@ export function startLocalPage(): void {
           lonVar: 'longitude',
           depthVar: 'depth',
         }),
+        title: () => {
+          const d = deployments[Number(deploymentSel.value) || 0];
+          return d ? `${d.glider} ${stamp(d.start)}` : 'Glider track';
+        },
       });
     }
     legend.paint();

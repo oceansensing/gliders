@@ -223,6 +223,40 @@ break silently: the SAAR atlas fetch, and the worker's own URL (which must be
 carries the base). `test:pages` reads the built HTML for root-absolute
 internal URLs and the sources for a bare `fetch('/…')`.
 
+## An exported figure has to stand on its own
+
+Three things separate a PNG somebody can put in a paper from a screenshot,
+and `packages/plot/png.ts` does all three.
+
+**Resolution.** 3×, so a 1240-point section leaves as 3828 px — a full-width
+journal figure at 300 dpi with room to spare. The type and linework are
+redrawn at that size rather than enlarged.
+
+**It carries its own text.** The title and the caption are drawn into the
+image. On screen they are HTML beside the SVG; in a manuscript the figure has
+to say what it is and how much of the record it shows without the page around
+it. The plot area is a closed box for the same reason: two legs leave the top
+and right of the data floating against whatever the document's background is.
+
+**It is on white.** Print is white with dark ink whatever the reader's screen
+is set to, so the export uses the light palette even in dark mode. The fonts
+are the generic families deliberately — an SVG rasterised through a blob URL
+is its own document and cannot reach the page's `@font-face` rules, so naming
+Inter there would silently fall back anyway.
+
+The map needs a different exporter (`src/lib/map-export.ts`), because it is
+not an SVG: it is a pane of `<img>` tiles with vector overlays. The tiles are
+composited onto a canvas and **the track is redrawn from its own
+coordinates** rather than rasterised from the screen, so the path is as sharp
+as the tiles allow. The colour bar, its range, and Esri's required
+attribution are drawn in, since a map whose colours mean nothing — or which
+arrives uncredited — is not publishable either.
+
+**It works only because the tiles are fetched with CORS.** Drawing an image
+the browser fetched without it taints the canvas, and a tainted canvas throws
+on `toBlob` — at the very end, after all the work. The tile layer asks
+anonymously; Esri answers `Access-Control-Allow-Origin: *`.
+
 ## Colour limits are chosen, axis limits are not
 
 An **axis** takes the true minimum and maximum of what it was given. A plot

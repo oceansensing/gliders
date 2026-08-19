@@ -358,6 +358,7 @@ export function startDeploymentPage(): void {
         }
       : null),
     onChange: () => remember(),
+    title: () => info?.title || id!,
   });
 
   const paintTrack = (): void => legend.paint();

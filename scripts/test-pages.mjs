@@ -329,6 +329,20 @@ section('the map’s colour control and the profile pair');
     && /\.map[^{]*\{[^}]*flex:\s*(1|auto)/.test(css));
 }
 
+section('every figure can be exported');
+
+{
+  const doc = parse('deployment/index.html');
+  ok('each plot has a PNG button',
+    doc.querySelectorAll('[data-plot-png]').length >= 4,
+    `${doc.querySelectorAll('[data-plot-png]').length} buttons`);
+  /* A map is not an SVG — it is a pane of tiles with vector overlays — so it
+     needs its own exporter, and it needs a button of its own. */
+  ok('and so does the map', doc.querySelector('[data-track-png]') !== null);
+  ok('on the local page too',
+    parse('local/index.html').querySelector('[data-track-png]') !== null);
+}
+
 section('the local page carries the same track figure');
 
 {
