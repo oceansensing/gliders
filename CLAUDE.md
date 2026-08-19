@@ -318,6 +318,50 @@ limit can be seen, changed, and brought back with Reset. It costs nothing at
 the other end — a floor below every sample excludes none, because a limit
 here is a window onto the data rather than a rescale of it.
 
+## The browser map draws real tracks
+
+A dot at the centre of a bounding box says a glider was somewhere in the
+Mid-Atlantic; the path says it ran the shelf break for eleven days. A whole
+mission at one fix per six hours is a few dozen points — **3 KB and about a
+fifth of a second** — so the expensive part is the number of requests, not
+any one of them. They are fetched for what is on screen, capped at 60,
+six at a time, and the cap is printed in the status line.
+
+**The colour is one absolute clock shared by every track**, not each
+mission's own span. That is what makes the map answer "when": two gliders out
+the same season come back the same colour and a 2019 deployment is visibly
+different from a 2026 one. Per-mission normalising would have made every
+track run the same gradient and said nothing. The span is printed beside the
+counts, because a colour whose key the reader cannot see means nothing.
+
+**The dot stays**, at the end of the path once there is one and at the
+bounding-box centre until then. A track has two ends and nothing on it says
+which is the recent one, and "where is it now" is the question the map is
+opened with.
+
+**Archived tracks are cached in `localStorage`, and only archived ones.** A
+mission still reporting grows every few hours, so a cached path would show a
+glider that had stopped moving — the one thing a live map must not do. The
+entry is keyed on the last-report time as well as the id, so a deployment
+that reported again invalidates itself rather than going stale. Coordinates
+are rounded to four decimals, about eleven metres, which is far finer than a
+six-hour fix and a third of the bytes.
+
+### Two rules stand between an invisible hit line and a clickable one
+
+A 2.5 px stroke is very hard to hit, and a diagonal one is worse — its
+bounding box is mostly not the line. So each track carries one fat
+transparent line beneath it. Making that line *work* took two goes:
+
+- SVG's default `pointer-events: visiblePainted` makes an element a target
+  only where it is **painted**, and `stroke-opacity: 0` paints nothing. It
+  swallowed exactly zero clicks and looked like a hit-testing problem with
+  thin strokes. `pointer-events: stroke` means the stroke area whatever the
+  paint.
+- The selector has to out-specify Leaflet's own `.leaflet-interactive
+  { pointer-events: auto }`, which is imported after this stylesheet and wins
+  at equal specificity. Hence `path.track-hit` rather than `.track-hit`.
+
 ## The track figure is shared, not copied
 
 The map, its title and the legend under it are one component

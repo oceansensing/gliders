@@ -329,6 +329,27 @@ section('the map’s colour control and the profile pair');
     && /\.map[^{]*\{[^}]*flex:\s*(1|auto)/.test(css));
 }
 
+section('a track on the browser map can be clicked');
+
+{
+  /**
+   * Two rules stand between an invisible hit line and a clickable one, and
+   * both were got wrong once.
+   *
+   * SVG's default `pointer-events: visiblePainted` makes an element a target
+   * only where it is *painted*, and the hit line is `stroke-opacity: 0` — so
+   * it swallowed exactly zero clicks. `stroke` is the value that means "the
+   * stroke area, whatever the paint".
+   *
+   * And the selector has to out-specify Leaflet's own
+   * `.leaflet-interactive { pointer-events: auto }`, which is imported after
+   * this stylesheet and wins at equal specificity. Hence `path.track-hit`.
+   */
+  ok('the hit line takes pointer events on its stroke',
+    /path\.track-hit\s*\{[^}]*pointer-events:\s*stroke/.test(ALL_CSS));
+  ok('and says so with a cursor', /path\.track-hit\s*\{[^}]*cursor:\s*pointer/.test(ALL_CSS));
+}
+
 section('every figure can be exported');
 
 {

@@ -58,6 +58,15 @@ export interface QueryOptions {
   depthVar?: string;
   /** The column the bin groups by — the profile's own timestamp. */
   timeVar?: string;
+  /**
+   * One row per interval of the time column — an ERDDAP interval string such
+   * as `6hours` or `1day`. Used for a coarse track: a whole mission's path in
+   * a few dozen points, which is 3 KB and a fifth of a second rather than the
+   * megabytes a full record costs.
+   *
+   * Ignored when `binMetres` is set; a query takes one `orderByClosest`.
+   */
+  every?: string;
   /** Extra constraints, already written as ERDDAP expressions. */
   extra?: string[];
 }
@@ -90,6 +99,8 @@ export function tabledapUrl(
   if (opts.binMetres && opts.depthVar) {
     const group = `${opts.timeVar ?? 'time'},${opts.depthVar}/${opts.binMetres}`;
     parts.push(`orderByClosest(%22${group}%22)`);
+  } else if (opts.every) {
+    parts.push(`orderByClosest(%22${opts.timeVar ?? 'time'}/${opts.every}%22)`);
   }
 
   return `${root}/tabledap/${id}.${format}?${parts.join('&')}`;

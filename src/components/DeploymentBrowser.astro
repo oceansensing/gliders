@@ -204,6 +204,29 @@
     fill-opacity: 0.85;
   }
 
+  /**
+   * **An invisible line still has to be clickable, and by default it is
+   * not.**
+   *
+   * SVG's default `pointer-events: visiblePainted` means an element is a
+   * target only where it is *painted* — and `stroke-opacity: 0` paints
+   * nothing, so the fat transparent line laid over each track swallowed
+   * exactly zero clicks. It looked like a hit-testing problem with thin
+   * strokes and was a paint rule.
+   *
+   * `stroke` is the value that means "the stroke area, whatever the paint",
+   * which is precisely what a hit target is.
+   */
+  /* `path.track-hit`, not `.track-hit`: Leaflet's own stylesheet carries
+     `.leaflet-interactive { pointer-events: auto }` at the same specificity
+     and is imported after this, so the bare class lost the cascade and the
+     line went back to being unhittable — the same bug twice, once in SVG's
+     paint rule and once in CSS ordering. The element selector settles it. */
+  path.track-hit {
+    pointer-events: stroke;
+    cursor: pointer;
+  }
+
   /* Leaflet's own chrome, themed. */
   .leaflet-container {
     background: var(--bg-subtle);
@@ -245,7 +268,11 @@
 <script>
   import L from 'leaflet';
   import 'leaflet/dist/leaflet.css';
-  import { listDatasets, type DeploymentSummary } from '@c4po/erddap';
+  import {
+    DEFAULT_BASE, listDatasets, parseJsonlCsvStream, request, tabledapUrl,
+    type DeploymentSummary,
+  } from '@c4po/erddap';
+  import { sample } from '@c4po/plot';
   import { withBase } from '../lib/url';
 
   const root = document.querySelector<HTMLElement>('[data-browser]')!;
@@ -284,6 +311,7 @@
     },
   ).addTo(map);
   const markers = L.layerGroup().addTo(map);
+  const trackLayer = L.layerGroup().addTo(map);
 
   const now = () => Date.now() / 1000;
   const isActive = (d: DeploymentSummary) => now() - d.end < ACTIVE_DAYS * 86400;
@@ -392,7 +420,226 @@
     }
 
     drawMarkers();
+    drawTracks();
     say();
+    void loadTracks(shown);
+  }
+
+  /**
+   * Each mission's actual path, coloured by its own time.
+   *
+   * A dot at the centre of a bounding box says a glider was somewhere in the
+   * Mid-Atlantic; the path says it ran the shelf break for eleven days and
+   * which way it went. It costs little: a whole mission at one fix per six
+   * hours is a few dozen points — 3 KB and about a fifth of a second — so
+   * the expensive part is the *number* of requests, not any one of them.
+   *
+   * **Capped, and the cap is said out loud.** The archive is 2,534
+   * deployments and nobody wants 2,534 requests; the tracks are drawn for
+   * what is on screen, up to `TRACK_CAP`, and the status line reports when
+   * that bit.
+   *
+   * **The colour runs over one absolute clock shared by every track on
+   * screen**, not over each mission's own span. That is what makes the map
+   * answer "when": two gliders out the same season come back the same
+   * colour, and a 2019 deployment is visibly a different colour from a 2026
+   * one. Normalising per mission would have made every track run the same
+   * gradient and told the reader nothing except which way each one went.
+   *
+   * It reads well at both scales without a switch. Filtered to the active
+   * deployments the span is a few weeks, so the colour separates missions
+   * within a season; across the whole archive the span is decades and each
+   * mission arrives as essentially one colour, which is the point.
+   */
+  const TRACK_CAP = 60;
+  const TRACK_EVERY = '6hours';
+  const TRACK_COLORMAP = 'cmo.thermal';
+  const tracks = new Map<string, Array<[number, number]>>();
+  let trackRun = 0;
+
+  /**
+   * Archived tracks, kept between visits.
+   *
+   * **Only the archived ones.** A deployment that is still reporting grows
+   * every few hours, so caching its path would show a reader a glider that
+   * had stopped moving — the one thing a live map must not do. A finished
+   * mission's path is final and there is no reason to fetch it twice.
+   *
+   * Stored at four decimal places, which is about eleven metres — far finer
+   * than a six-hour fix and a third of the bytes of full precision. The
+   * budget is a count rather than a size so eviction is predictable, and
+   * every access is wrapped: `localStorage` *throws* where a browser is set
+   * to block site data, and a map that fails to draw because a cache could
+   * not be read would be a poor trade for the saving.
+   */
+  const CACHE_KEY = 'gliders.tracks.v1';
+  const CACHE_MAX = 400;
+  type Cached = Record<string, { end: number; path: number[] }>;
+
+  function readCache(): Cached {
+    try {
+      return JSON.parse(localStorage.getItem(CACHE_KEY) ?? '{}') as Cached;
+    } catch {
+      return {};
+    }
+  }
+
+  let cache: Cached = readCache();
+  let cacheDirty = false;
+
+  function cacheGet(d: DeploymentSummary): Array<[number, number]> | null {
+    const hit = cache[d.id];
+    /* Keyed on the last report as well as the id: a mission that was
+       archived when it was cached but has since reported again is a
+       different path, and the stale one would be wrong rather than merely
+       old. */
+    if (!hit || hit.end !== Math.round(d.end)) return null;
+    const path: Array<[number, number]> = [];
+    for (let i = 0; i + 1 < hit.path.length; i += 2) path.push([hit.path[i], hit.path[i + 1]]);
+    return path;
+  }
+
+  function cachePut(d: DeploymentSummary, path: Array<[number, number]>): void {
+    if (isActive(d) || path.length < 2) return;
+    const flat: number[] = [];
+    for (const [lat, lon] of path) {
+      flat.push(Math.round(lat * 1e4) / 1e4, Math.round(lon * 1e4) / 1e4);
+    }
+    cache[d.id] = { end: Math.round(d.end), path: flat };
+    cacheDirty = true;
+  }
+
+  /** Written once the fetching settles rather than per track: a hundred
+      serialisations of a growing object is the expensive way to save. */
+  function flushCache(): void {
+    if (!cacheDirty) return;
+    cacheDirty = false;
+    try {
+      const ids = Object.keys(cache);
+      if (ids.length > CACHE_MAX) {
+        /* Oldest last-report first: the missions a reader is least likely to
+           come back to. */
+        const keep = ids
+          .sort((a, b) => (cache[b].end ?? 0) - (cache[a].end ?? 0))
+          .slice(0, CACHE_MAX);
+        const next: Cached = {};
+        for (const id of keep) next[id] = cache[id];
+        cache = next;
+      }
+      localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+    } catch {
+      /* Full, or blocked. The map is already drawn; the next visit simply
+         fetches again. */
+    }
+  }
+
+  async function loadTracks(list: DeploymentSummary[]): Promise<void> {
+    const run = ++trackRun;
+    const want = list.slice(0, TRACK_CAP);
+    let next = 0;
+
+    const worker = async (): Promise<void> => {
+      for (;;) {
+        if (run !== trackRun) return;
+        const d = want[next++];
+        if (!d) return;
+        if (!tracks.has(d.id)) {
+          const cached = cacheGet(d);
+          if (cached) {
+            tracks.set(d.id, cached);
+            if (run === trackRun) { drawTracks(); drawMarkers(); }
+            continue;
+          }
+          try {
+            const url = tabledapUrl(DEFAULT_BASE, d.id, 'jsonlCSV',
+              ['time', 'latitude', 'longitude'], { every: TRACK_EVERY });
+            const res = await request(url);
+            const { columns, rows } = await parseJsonlCsvStream(res, {
+              names: ['time', 'latitude', 'longitude'],
+              timeColumns: new Set(['time']),
+            });
+            const lat = columns.get('latitude')!;
+            const lon = columns.get('longitude')!;
+            const path: Array<[number, number]> = [];
+            for (let i = 0; i < rows; i++) {
+              if (Number.isFinite(lat[i]) && Number.isFinite(lon[i])) path.push([lat[i], lon[i]]);
+            }
+            tracks.set(d.id, path);
+            cachePut(d, path);
+          } catch {
+            /* A deployment whose positions cannot be read keeps its marker
+               and no track. Not worth a message: the dot is still there and
+               still opens the page. */
+            tracks.set(d.id, []);
+          }
+        }
+        /* Both: a deployment's dot steps aside once its path is drawn, and
+           that only happens if the markers are repainted too. */
+        if (run === trackRun) { drawTracks(); drawMarkers(); }
+      }
+    };
+
+    await Promise.all(Array.from({ length: 6 }, worker));
+    if (run === trackRun) flushCache();
+  }
+
+  /** The clock every track is coloured against: the span of what is shown. */
+  function trackSpan(): { lo: number; hi: number } {
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const d of shown.slice(0, TRACK_CAP)) {
+      if (Number.isFinite(d.start)) lo = Math.min(lo, d.start);
+      if (Number.isFinite(d.end)) hi = Math.max(hi, d.end);
+    }
+    return Number.isFinite(lo) && hi > lo ? { lo, hi } : { lo: 0, hi: 1 };
+  }
+
+  function drawTracks(): void {
+    trackLayer.clearLayers();
+    const { lo, hi } = trackSpan();
+    for (const d of shown.slice(0, TRACK_CAP)) {
+      const path = tracks.get(d.id);
+      if (!path || path.length < 2) continue;
+
+      /* One polyline per stretch so the colour can change along it, which is
+         what makes the direction of travel readable. They are drawn only —
+         the whole path shares one invisible hit line below. */
+      const step = Math.max(1, Math.floor(path.length / 40));
+      const span = d.end > d.start ? d.end - d.start : 1;
+      for (let i = 0; i + step < path.length; i += step) {
+        const seg = path.slice(i, Math.min(i + step + 1, path.length));
+        /* Where this stretch falls on the shared clock: the mission's own
+           position in it, plus how far along the mission the stretch is. */
+        const at = d.start + ((i + step / 2) / Math.max(1, path.length - 1)) * span;
+        const t = Math.min(1, Math.max(0, (at - lo) / (hi - lo)));
+        L.polyline(seg, {
+          color: sample(TRACK_COLORMAP, t),
+          weight: isActive(d) ? 2.5 : 1.8,
+          opacity: isActive(d) ? 0.95 : 0.65,
+          interactive: false,
+        }).addTo(trackLayer);
+      }
+
+      /**
+       * **One transparent, fat line per track, carrying the click.**
+       *
+       * A 2.5 px stroke is very hard to hit with a pointer, and a diagonal
+       * one is worse: its bounding box is mostly not the line. Widening the
+       * *target* without widening the mark is the standard answer, and doing
+       * it once per track rather than per segment keeps the interactive
+       * layer count at one per mission instead of forty.
+       */
+      const hit = L.polyline(path, {
+        color: '#000',
+        opacity: 0,
+        weight: 14,
+        className: 'track-hit',
+        bubblingMouseEvents: false,
+      });
+      hit.bindTooltip(`${d.title || d.id} — ${date(d.start)} → ${date(d.end)}`, { sticky: true });
+      hit.on('click', () => { location.href = link(d.id); });
+      hit.addTo(trackLayer);
+    }
   }
 
   function drawMarkers(): void {
@@ -403,8 +650,20 @@
     const CAP = 500;
     const subset = shown.slice(0, CAP);
     for (const d of subset) {
-      const lat = (d.south + d.north) / 2;
-      const lon = (d.west + d.east) / 2;
+      /**
+       * **The dot marks where the glider is now**, or was when it last
+       * reported — which is the question a reader opens this map with, and
+       * the one a bare path does not answer: a track has two ends and
+       * nothing on it says which is the recent one.
+       *
+       * At the end of the path once there is one, and at the centre of the
+       * deployment's bounding box until then, so the dot is on screen from
+       * the first paint rather than appearing seconds later.
+       */
+      const path = tracks.get(d.id);
+      const end = path && path.length ? path[path.length - 1] : null;
+      const lat = end ? end[0] : (d.south + d.north) / 2;
+      const lon = end ? end[1] : (d.west + d.east) / 2;
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
       const live = isActive(d);
       const marker = L.circleMarker([lat, lon], {
@@ -440,7 +699,20 @@
     const showing = shown.length.toLocaleString();
     const counts =
       `${showing} of ${total} deployments · ${live} reporting in the last ${ACTIVE_DAYS} days`;
-    status.textContent = notice ? `${counts} — ${notice}` : counts;
+    /* Said out loud: a map showing sixty tracks out of four hundred matches
+       should not look like a map of all four hundred. */
+    const capped = shown.length > TRACK_CAP
+      ? ` · tracks drawn for the first ${TRACK_CAP}`
+      : '';
+    /* A colour that means something the reader cannot see the key to means
+       nothing. The span is the key. */
+    const { lo, hi } = trackSpan();
+    const scale = shown.length && hi > lo
+      ? ` · tracks coloured ${date(lo)} → ${date(hi)}`
+      : '';
+    status.textContent = notice
+      ? `${counts} — ${notice}`
+      : `${counts}${capped}${scale}`;
   }
 
   function fillYears(): void {
