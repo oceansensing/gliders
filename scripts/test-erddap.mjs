@@ -189,6 +189,56 @@ section('an unreadable window is a gap, not a broken deployment');
     String(outage?.message));
 }
 
+section('the depth bin is chosen from the glider');
+
+{
+  /* Vertical sampling varies by an order of magnitude across the archive, so
+     a fixed bin is wrong at one end or the other: measured, 5 m keeps an
+     eighth of a shelf glider's profile and essentially all of a deep one's.
+     The finest bin is tried first and coarsened only when the deployment
+     really would be too large at it. */
+  const info = parseInfo('electa-20260807T1633', read('info-electa.json'));
+  const rows = fs.readFileSync('scripts/fixtures/erddap/rows-electa.jsonl', 'utf8');
+  const span = 30 * 86400;
+
+  const seen = [];
+  const record = async (url) => {
+    const m = /depth\/(\d+)/.exec(url);
+    seen.push(m ? Number(m[1]) : 0);
+    return new Response(rows, { status: 200 });
+  };
+
+  /* A budget the fixture cannot blow: 163 rows in six hours projects to
+     ~19,500 over 30 days, so the finest bin is kept. */
+  seen.length = 0;
+  const fine = await fetchData('electa-20260807T1633', info, {
+    variables: ['temperature'], start: 0, end: span,
+    binMetres: 1, binCandidates: [2, 5, 10], targetRows: 250_000,
+    fetchImpl: record, concurrency: 1, now: () => 0, maxChunks: 2,
+  });
+  check('a deployment that fits keeps the finest bin', fine.resolution.binMetres, 1);
+  check('and only probed once', seen[0], 1);
+
+  /* A budget it cannot meet: every candidate is *measured* rather than
+     extrapolated, because rows do not scale as 1/bin — halving the bin took
+     one real deployment from 18,673 rows to 44,592, not to 93,000. */
+  seen.length = 0;
+  const coarse = await fetchData('electa-20260807T1633', info, {
+    variables: ['temperature'], start: 0, end: span,
+    binMetres: 1, binCandidates: [2, 5, 10], targetRows: 100,
+    fetchImpl: record, concurrency: 1, now: () => 0, maxChunks: 2,
+  });
+  check('an over-budget deployment coarsens to the last candidate',
+    coarse.resolution.binMetres, 10);
+  ok('having probed each candidate in turn',
+    seen.slice(0, 4).join(',') === '1,2,5,10', seen.slice(0, 6).join(','));
+
+  /* And the bin it settled on is the one every later chunk uses, rather
+     than the finest one it happened to probe with first. */
+  ok('the chosen bin is what the rest of the fetch asks for',
+    seen.slice(4).every((b) => b === 10), seen.join(','));
+}
+
 section('dataset info, 2026 and 2018');
 
 {

@@ -52,8 +52,18 @@ export interface FetchOptions extends RequestOptions {
   variables: readonly string[];
   start?: number;
   end?: number;
-  /** One row per this many metres of depth per profile. Omit for full rate. */
+  /**
+   * One row per this many metres of depth per profile. Omit for full rate.
+   *
+   * Treated as the *finest* bin to try: if the deployment would blow
+   * `targetRows` at it, `fetchData` coarsens through `binCandidates` and
+   * reports which bin it settled on in `TableData.resolution`.
+   */
   binMetres?: number;
+  /** Coarser bins to fall back through, finest first. */
+  binCandidates?: readonly number[];
+  /** Row budget for the whole deployment, used to pick the bin. */
+  targetRows?: number;
   /** Blank values their own QARTOD flag rejects. Default true. */
   applyQc?: boolean;
   /** Which flag values to reject. Default: fail (4) and missing (9). */
@@ -105,16 +115,16 @@ export async function fetchData(
   const columns = columnsFor(info, opts);
   const start = pick(opts.start, info.start);
   const end = pick(opts.end, info.end);
-  const resolution: Resolution = opts.binMetres
-    ? { kind: 'binned', binMetres: opts.binMetres }
-    : { kind: 'full' };
 
   if (!(end > start)) {
     /* A dataset whose coverage attributes are missing or crossed. One
        request for everything is the only honest plan. */
-    const only = await chunk(id, info, columns, undefined, undefined, opts);
+    const only = await chunk(id, info, columns, undefined, undefined, opts, opts.binMetres);
     const parts = [only].filter(nonNull);
-    return finish(parts, columns, info, opts, resolution, only?.unreadable ?? true);
+    const res: Resolution = opts.binMetres
+      ? { kind: 'binned', binMetres: opts.binMetres }
+      : { kind: 'full' };
+    return finish(parts, columns, info, opts, res, only?.unreadable ?? true);
   }
 
   /* The probe. How long it takes sizes every window after it, so it is a
@@ -122,9 +132,58 @@ export async function fetchData(
      is six hours rather than the day the first version used. */
   const clock = opts.now ?? (() => Date.now());
   const probeSpan = Math.min(opts.probeSeconds ?? 6 * HOUR, end - start);
-  const probeAt = clock();
-  const probe = await chunk(id, info, columns, start, start + probeSpan, opts);
-  const probeTook = Math.max(clock() - probeAt, 1) / 1000;
+
+  /**
+   * **The bin is chosen from the glider, not from a constant**, and the
+   * measurements say why a constant cannot work. Vertical sampling varies by
+   * an order of magnitude across the archive, and a fixed bin is wrong at
+   * both ends of it:
+   *
+   *   electa   171 m shelf, 11 days   full 142,376 rows   ~2.5 m native
+   *            5 m bin →  18,673 (13% of the record)
+   *            1 m bin →  71,968 (51%)
+   *
+   *   ru29     961 m deep, 2 months                       ~5.3 m native
+   *            5 m bin → 147,464
+   *            1 m bin → 184,868 (only 1.25× more — there is no more)
+   *
+   * A 5 m bin throws away seven eighths of a shelf glider's profile, where
+   * the thermocline it is cutting through is metres thick, and takes almost
+   * nothing off a deep glider, which was never sampled that finely. So the
+   * finest bin is tried first and coarsened only if the deployment would
+   * actually be too large — which is a property of the mission, not a guess
+   * made in advance.
+   *
+   * Rows do **not** scale as 1/bin, so the projection cannot be computed:
+   * halving the bin took electa from 18,673 to 44,592 rather than to 93,000,
+   * because below the native spacing a finer bin has nothing to return. Each
+   * candidate is therefore measured with its own probe rather than
+   * extrapolated, at the cost of one short request per step — and the step
+   * is rare.
+   */
+  const candidates = opts.binMetres
+    ? [opts.binMetres, ...(opts.binCandidates ?? [])
+        .filter((b) => b > opts.binMetres!)]
+    : [undefined];
+  const target = opts.targetRows ?? 250_000;
+
+  let bin = candidates[0];
+  let probe: Part | null = null;
+  let probeTook = 1;
+
+  for (let attempt = 0; attempt < candidates.length; attempt++) {
+    bin = candidates[attempt];
+    const at = clock();
+    probe = await chunk(id, info, columns, start, start + probeSpan, opts, bin);
+    probeTook = Math.max(clock() - at, 1) / 1000;
+    if (!probe || probe.rows === 0) break;
+    const projected = probe.rows * ((end - start) / probeSpan);
+    if (projected <= target || attempt === candidates.length - 1) break;
+  }
+
+  const resolution: Resolution = bin
+    ? { kind: 'binned', binMetres: bin }
+    : { kind: 'full' };
 
   const parts: (Part | null)[] = [probe];
   let rows = probe?.rows ?? 0;
@@ -165,7 +224,7 @@ export async function fetchData(
       const i = next++;
       if (i >= windows.length) return;
       const [a, b] = windows[i];
-      const part = await chunk(id, info, columns, a, b, opts);
+      const part = await chunk(id, info, columns, a, b, opts, bin);
       slots[i] = part;
       done++;
       rows += part?.rows ?? 0;
@@ -237,13 +296,14 @@ async function chunk(
   start: number | undefined,
   end: number | undefined,
   opts: FetchOptions,
+  bin: number | undefined,
 ): Promise<Part | null> {
   const url = tabledapUrl(opts.base ?? 'https://gliders.ioos.us/erddap', id, 'jsonlCSV', columns, {
     start,
     end,
     timeVar: info.timeVar,
-    depthVar: opts.binMetres ? binColumn(info) : undefined,
-    binMetres: opts.binMetres,
+    depthVar: bin ? binColumn(info) : undefined,
+    binMetres: bin,
   });
 
   const nothing = (unreadable: boolean): Part => ({

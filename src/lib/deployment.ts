@@ -24,10 +24,26 @@ import { Deriver } from './derived.ts';
 import { DERIVED_NAMES } from './seawater.ts';
 import { withBase } from './url.ts';
 
-/** Depth bin for the overview. Five metres keeps the thermocline's shape
-    while cutting an eleven-day coastal deployment from 142,000 rows to
-    18,700 — measured. The profile explorer loads full rate per window. */
-const OVERVIEW_BIN = 5;
+/**
+ * The overview's depth bin: one metre, coarsened only if the deployment
+ * would be enormous at it.
+ *
+ * It was a flat 5 m, and that was measurably wrong at the shallow end. A
+ * shelf glider samples every ~2.5 m through a thermocline metres thick, so a
+ * 5 m bin returned **9 samples per profile out of 68** — an eighth of the
+ * record, and a section whose vertical structure was the bin's rather than
+ * the ocean's. The same 5 m takes almost nothing off a 961 m glider, which
+ * was never sampled finer than about 5 m to begin with.
+ *
+ * One metre costs 3.9× the rows on that shelf glider and 1.25× on the deep
+ * one, and no server time at all — the bin is applied after the read, so a
+ * finer one is the same request. See `packages/erddap/fetch.ts`.
+ *
+ * The candidates below are what it falls back through when a mission really
+ * is too long; the page prints whichever it settled on.
+ */
+const OVERVIEW_BIN = 1;
+const BIN_CANDIDATES = [2, 5, 10];
 
 /** Sections open before the reader chooses anything. */
 const DEFAULT_SECTIONS = ['temperature', 'salinity', 'sigma0'];
@@ -279,9 +295,10 @@ export function startDeploymentPage(): void {
     }
 
     resolutionEl.textContent = table.resolution.kind === 'binned'
-      ? `On screen: one sample per ${table.resolution.binMetres} m per profile — `
-        + `${table.rows.toLocaleString()} of the deployment’s full rate. The `
-        + `profile explorer below loads a time window at full resolution.`
+      ? `On screen: at most one sample per ${table.resolution.binMetres} m per `
+        + `profile — ${table.rows.toLocaleString()} rows. Where the glider `
+        + `sampled more coarsely than that, this is every sample it took. The `
+        + `profile explorer below loads a time window at full rate.`
       : `On screen: every sample the server returned — ${table.rows.toLocaleString()} rows.`;
     if (table.partial) {
       /* A window the server would not answer for. On this server that is
@@ -368,6 +385,7 @@ export function startDeploymentPage(): void {
       table = await fetchData(id!, info, {
         variables: wanted,
         binMetres: OVERVIEW_BIN,
+        binCandidates: BIN_CANDIDATES,
         applyQc: qcBox.checked,
         signal: controller.signal,
         onChunk: onProgress,
