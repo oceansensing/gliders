@@ -22,9 +22,11 @@ coastal Mid-Atlantic, 172 m deepest:
 
 Two facts fall out, and the second one is the load-bearing one:
 
-1. **Depth-binning works and preserves the section.** 142,378 rows collapse to
-   18,675 — one sample per 5 m per profile — and the section, the T–S diagram
-   and the track all look the same. This is the overview resolution.
+1. **Depth-binning is the overview mechanism** — `orderByClosest` returns at
+   most one sample per N metres per profile. This note used to say 5 m and
+   claim the figures "all look the same" at it. **They do not.** The track
+   does; the section does not, and at 5 m it was drawing its own bin rather
+   than the thermocline. How N is chosen is below.
 2. **Server time scales with the span asked for, not with the rows returned.**
    The bin happens *after* the read, so binning the whole deployment costs the
    same fifteen seconds as not binning it. About **1.35 s per day of
@@ -44,6 +46,29 @@ the same deployment and the same 18,661 rows:
 |---|---|---|
 | by rows (2 chunks) | 3,197 ms | 14,273 ms |
 | by elapsed time (15 chunks) | **925 ms** | **6,100 ms** |
+
+## Choosing the bin
+
+Vertical sampling varies by an order of magnitude across the archive, so one
+constant cannot serve it:
+
+| | native spacing | 5 m bin | 1 m bin | full |
+|---|---|---|---|---|
+| `electa` — 171 m shelf, 11 days | ~2.5 m | 18,673 | 71,968 | 142,376 |
+| `ru29` — 961 m deep, 2 months | ~5.3 m | 147,464 | 184,868 | — |
+
+5 m keeps nine samples out of a shelf glider's sixty-eight per profile, and
+takes almost nothing off the deep one — 1 m buys `ru29` only 25% more rows
+because there are no more to get.
+
+So `fetchData` tries `binMetres` first and coarsens through `binCandidates`
+only if the probe projects past `targetRows`. **Each candidate is measured
+with its own probe rather than extrapolated**: rows do not scale as 1/bin,
+because below the native spacing a finer bin returns nothing extra — halving
+electa's bin gave 44,592 rather than 93,000.
+
+A finer bin costs **no server time**: it is applied after the read. What it
+costs is bytes, parse and points — electa goes 2.1 MB → 8.0 MB.
 
 **Concurrency is 3, and more does not help.** Four parallel one-day requests
 measured 4.3 s wall against ~4.4 s of serial time — the server queues rather

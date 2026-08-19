@@ -39,9 +39,11 @@ Measured on `electa-20260807T1633`, an 11-day Mid-Atlantic deployment,
 
 Two things follow, and the second is the one that is easy to get wrong:
 
-1. `orderByClosest("time,depth/5")` gives one sample per 5 m per profile.
-   142,378 rows become 18,675 and the section, the track and the T–S diagram
-   all look the same. This is the overview resolution.
+1. `orderByClosest("time,depth/N")` gives at most one sample per N metres per
+   profile — the mechanism the overview resolution rests on. **How coarse N
+   should be is the next section, and the first answer was wrong:** this note
+   originally said 5 m and that the figures "all look the same" at it, which
+   was true of the track and false of the section.
 2. **Server time scales with the span asked for, not with the rows
    returned.** The bin happens after the read. About 1.35 s per day of
    deployment, near enough linear.
@@ -49,6 +51,35 @@ Two things follow, and the second is the one that is easy to get wrong:
 So the fetcher chunks by time *and* bins, for different reasons: chunks so
 something is on screen in under a second and keeps growing, binning so the
 network and the parser are never what is being waited on.
+
+## The depth bin is the glider's, not a constant
+
+The bin started as a flat 5 m and that was measurably wrong at the shallow
+end. Vertical sampling varies by an order of magnitude across the archive:
+
+| | native spacing | 5 m bin | 1 m bin | full |
+|---|---|---|---|---|
+| `electa` — 171 m shelf, 11 days | ~2.5 m | 18,673 | 71,968 | 142,376 |
+| `ru29` — 961 m deep, 2 months | ~5.3 m | 147,464 | 184,868 | — |
+
+A 5 m bin keeps an eighth of a shelf glider's profile — nine samples out of
+sixty-eight — through a thermocline that is metres thick, so the section
+showed the bin's structure rather than the ocean's. The same 5 m takes almost
+nothing off the deep glider, which was never sampled that finely: 1 m buys it
+only 25% more rows because there are no more to get.
+
+So the finest bin is tried first and coarsened only if the deployment would
+actually blow the row budget. **The projection cannot be computed, only
+measured**: rows do not scale as 1/bin, because below the native spacing a
+finer bin has nothing to return — halving electa's bin took it from 18,673 to
+44,592 rather than to 93,000. Each candidate gets its own six-hour probe.
+
+It costs no server time at all. The bin is applied *after* the read, which is
+the same fact that makes chunking rather than binning the thing that gets a
+picture on screen quickly.
+
+Measured on `electa` after the change: 71,922 rows, first section at 566 ms,
+complete at 2.9 s.
 
 **The first version sized its windows by row count, and that is the bug worth
 remembering.** It is the obvious design and it fails exactly because of (2):
@@ -107,6 +138,13 @@ Each of these shipped, was found by running the thing, and now has a gate.
   name it does not know rather than throwing. So every section drew
   perfectly, in entirely the wrong colours, with nothing anywhere saying so.
   `test:plot` now compares every name the site asks for against the table.
+- **The plot's point cap was the binding constraint, not the browser.** It
+  was 50,000, inherited from a decoder whose limit was 4,000 — so a deep
+  two-month deployment was drawn at every third point before the reader had
+  chosen anything. Measured in a browser on a 1240×360 section: 75,000 points
+  in 18 ms, 200,000 in 53 ms, 400,000 in 148 ms, and **57 DOM nodes at every
+  one of them**, because the dots are one path per colour bin. The cap is
+  200,000 now.
 - **The derived columns froze at the first chunk.** The memo was keyed by
   property name alone, so once `sa` was computed for chunk one it was
   returned for the rest of the load — a 500-element column beside a
