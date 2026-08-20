@@ -304,6 +304,53 @@ Written into the reader's own range box rather than forced behind it, so the
 limit can be seen, changed, and brought back with Reset. It excludes nothing:
 a limit is a window, so a floor below every sample still draws them all.
 
+### Ticks, and a grid to measure against
+
+A plot used to carry **two numbers per axis** — the ends, in the corners —
+which says what the range is and nothing about where anything inside it sits.
+Reading a feature off a section meant holding a finger against the frame.
+
+Ticks land on the 1–2–5 ladder, because a reader can subtract 25 from 30 in
+their head and cannot subtract 26.4 from 31.7. How many is set by the room
+available rather than by taste: a label is about 7 px per character in the
+mono face, so an x axis gets one per 78 px and a y axis one per 34 px. Too
+many is worse than too few — overlapping labels are unreadable *and* look
+like a rendering fault. jsdom does no layout and cannot see a collision, so
+that one was checked by walking every `text` node's box in a real browser
+across all six figures; what `test:plot` gates is the arithmetic behind it,
+that the x labels sit above the axis name rather than on it.
+
+**Time gets its own ladder.** 1–2–5 on seconds produces marks every 1.5 days
+at 03:47, which is a worse label than none, so the step comes from a table of
+intervals a person would choose and the marks land on multiples of it —
+midnight for a daily axis, the hour for an hourly one. The label carries only
+what the spacing justifies: `07-16` a week apart, `12:00` inside a day. A
+full `2026-07-15 21:01` six times across a 450 px axis is a smear.
+
+The grid is **one path per figure**, for the same reason the dots are one
+path per colour bin: nothing about the document grows with what is drawn.
+`fill: none` matters more here than anywhere — a single unclosed path
+spanning the plot fills to a solid block over the data.
+
+It is drawn at the edge of visible on purpose. A grid that competes with the
+data reads as structure in the ocean, so it takes the 1.33:1 hairline the
+tables use at half a pixel, and lighter again in print, where ink on white
+reads heavier than the same value glowing on a dark page.
+
+**`pad.bottom` went 30 → 46 when the x labels stopped being only the ends.**
+Two ends in the corners let a centred axis name pass between them; a full row
+of ticks printed straight through "Absolute Salinity (g/kg)".
+
+### An exported figure names the glider
+
+On screen the mission is in the page heading a few centimetres above every
+figure, so repeating it would be noise. In a file it is the only thing that
+says which glider this is — `T–S diagram.png` in a folder of them names
+nothing. So the PNG's drawn-in title and its filename both carry it, as
+`Preset.subject`: a function rather than a string, because the page is one
+route driven by a query parameter and the figures are built before the
+dataset is known.
+
 ### The plot area is a closed box
 
 A frame on all four sides is what a scientific figure wears, and it is what

@@ -35,6 +35,15 @@ export function startLocalPage(): void {
 
   const caches: CacheStore = new Map();
   let deployments: Deployment[] = [];
+
+  /** What the figures are of, for the exported files — the same name the
+      map's export uses, so a folder of PNGs from one decode agrees with
+      itself. On screen it is in the heading above them and would be noise;
+      in a file it is the only thing that says which glider this is. */
+  const subject = (): string | undefined => {
+    const d = deployments[Number(deploymentSel.value) || 0];
+    return d ? `${d.glider} ${stamp(d.start)}` : undefined;
+  };
   let source: Source | null = null;
   let atlas: SalinityAtlas | null = null;
   let track: Track | null = null;
@@ -188,10 +197,7 @@ export function startLocalPage(): void {
           lonVar: 'longitude',
           depthVar: 'depth',
         }),
-        title: () => {
-          const d = deployments[Number(deploymentSel.value) || 0];
-          return d ? `${d.glider} ${stamp(d.start)}` : 'Glider track';
-        },
+        title: () => subject() ?? 'Glider track',
       });
     }
     legend.paint();
@@ -199,6 +205,7 @@ export function startLocalPage(): void {
     const tsNode = document.querySelector<HTMLElement>('[data-figure="ts"]');
     if (tsNode && !tsFigure) {
       tsFigure = makeFigure(tsNode, {
+        subject,
         x: pick(['salinity_absolute', 'salinity_reference', 'salinity_practical']),
         y: 'temperature_conservative',
         c: 'depth',
@@ -276,6 +283,7 @@ export function startLocalPage(): void {
       figuresEl.append(node);
 
       const figure = makeFigure(node, {
+        subject,
         x: 'time', y: depth, c: name,
         flipY: true, style: 'dots', dot: 2.5, height: 360, map: v.colormap,
         note: v.derived ? 'computed from TEOS-10' : undefined,

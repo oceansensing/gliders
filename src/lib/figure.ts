@@ -52,6 +52,17 @@ export interface Preset {
    */
   yBoxes?: [string, string];
   /**
+   * What the figure is *of*, for the exported file.
+   *
+   * On screen the mission is in the page's heading a few centimetres above,
+   * so every figure repeating it would be noise. In a file it is the only
+   * thing that says which glider this is — "T–S diagram.png" in a folder of
+   * them names nothing. A function rather than a string because the page is
+   * one route driven by a query parameter: the figures are built before the
+   * dataset is known.
+   */
+  subject?: () => string | undefined;
+  /**
    * Called when the reader drags across the figure horizontally, with the
    * span they covered in data units. Only offered while the x axis is time,
    * because "load this range" means something there and nothing on a T–S
@@ -545,12 +556,13 @@ export function makeFigure(root: HTMLElement, preset: Preset): Figure {
          beside the SVG; in a manuscript the figure has to say what it is and
          how much of the record it shows without them. */
       const heading = root.querySelector('.figure-title')?.textContent?.trim();
+      const subject = preset.subject?.();
       const page = standalone(svg, {
-        title: heading,
+        title: [subject, heading].filter(Boolean).join(' — '),
         caption: caption.textContent ?? undefined,
       });
       const blob = await svgToPng(page.markup, page.width, page.height, 3, page.background);
-      save(blob, exportName([heading ?? '', 'vs', sel.x.value], 'png'));
+      save(blob, exportName([subject ?? '', heading ?? '', 'vs', sel.x.value], 'png'));
     } catch (error) {
       caption.textContent = `The image could not be saved: ${(error as Error).message}`;
     } finally {

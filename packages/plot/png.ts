@@ -133,6 +133,11 @@ function baseCss(): string {
     .axis { fill: none; stroke: ${PRINT.line}; stroke-width: 1; }
     .trace { fill: none; stroke: ${PRINT.accent}; stroke-width: 1.5; }
     .tick { fill: ${PRINT.muted}; font: 11px ui-monospace, monospace; }
+    .tick-mark { fill: none; stroke: ${PRINT.line}; stroke-width: 1; }
+    /* Lighter in print than on screen: ink on white reads heavier than the
+       same value glowing on a dark page, and a grid that competes with the
+       data is worse than no grid. */
+    .grid { fill: none; stroke: ${PRINT.line}; stroke-width: 0.4; opacity: 0.45; }
     .axis-name { fill: ${PRINT.text}; font: 12px ui-monospace, monospace; }
     .color-frame { fill: none; stroke: ${PRINT.line}; }
     .isopycnal { fill: none; stroke: ${PRINT.muted}; stroke-width: 0.7; opacity: 0.6; }

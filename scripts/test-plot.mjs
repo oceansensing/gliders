@@ -15,7 +15,11 @@
 import fs from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { check, done, near, ok, section } from './lib/check.mjs';
-import { plot, AXIS_MARGIN, DEFAULT_MAX_POINTS, tick, stamp } from '../packages/plot/plot.ts';
+import {
+  plot, AXIS_MARGIN, DEFAULT_MAX_POINTS, niceTicks, niceTimeTicks,
+  tick, timeTickLabel, stamp,
+} from '../packages/plot/plot.ts';
+import { standalone } from '../packages/plot/png.ts';
 import { sample, COLORMAPS, knownColormap } from '../packages/plot/colormaps.ts';
 import { robustRange, ROBUST_LOW, ROBUST_HIGH } from '../packages/plot/robust.ts';
 
@@ -289,9 +293,14 @@ section('a seeded range box is a visible default');
   const s = ramp(100);
   const svg = fresh();
   const r = plot(svg, s, { width: 400, height: 300, flipY: true, yRange: [0, null] });
+  /* Read off the frame rather than off the first two labels: an axis now
+     carries a tick per round value, so which label is which is a property of
+     the ladder and not something to assert against. */
+  check('the axis starts at the given floor', r.frame.yLo, 0);
+  ok('and still reaches the data', r.frame.yHi >= 99, `${r.frame.yHi}`);
   const ticks = [...svg.querySelectorAll('text.tick')].map((t) => t.textContent);
-  check('the axis starts at the given floor', parseFloat(ticks[0]), 0);
-  ok('and still ends at the data', parseFloat(ticks[1]) >= 99, ticks[1]);
+  ok('with a mark at the floor itself', ticks.some((t) => parseFloat(t) === 0),
+    ticks.join(' '));
   check('nothing is hidden by it', r.hidden, 0);
 
   /* A floor below the data must not clip: it is a window onto the data, so
@@ -439,6 +448,112 @@ section('an axis leaves room for the marker sitting on it');
     onBar.includes('49.0') && onBar.includes('0.000'), onBar.join(' '));
   ok('while the axes around it did take their margin',
     Math.abs(rc.frame.xHi - 49) > 1, `xHi ${rc.frame.xHi}`);
+}
+
+
+section('ticks a reader can do arithmetic on');
+
+{
+  /* The 1-2-5 ladder. A reader can subtract 25 from 30 in their head; they
+     cannot subtract 26.4 from 31.7. */
+  check('a decade lands on round tens', niceTicks(0, 100).join(' '),
+    '0 20 40 60 80 100');
+  check('a narrow range lands on round tenths', niceTicks(3.1, 3.9).join(' '),
+    '3.1 3.2 3.3 3.4 3.5 3.6 3.7 3.8 3.9');
+  ok('a salinity range lands on whole units',
+    niceTicks(32.2, 36.9).every((v) => Number.isInteger(v)),
+    niceTicks(32.2, 36.9).join(' '));
+  /* Binary rounding is what makes a 0.1 step print 2.9000000000000004. */
+  ok('and nothing arrives with floating-point dust',
+    niceTicks(0, 3).every((v) => String(v).length <= 4), niceTicks(0, 3).join(' '));
+
+  check('a backwards range has no ticks', niceTicks(10, 1).length, 0);
+  check('and neither has a NaN one', niceTicks(NaN, 1).length, 0);
+
+  /**
+   * Time is not decimal, and a 1-2-5 ladder on it puts marks every 1.5 days
+   * at 03:47 — a worse label than none. The step comes from intervals a
+   * person would choose, and the marks land on multiples of it.
+   */
+  const day = 86400;
+  const t0 = Date.UTC(2026, 6, 15) / 1000;
+  const week = niceTimeTicks(t0, t0 + 28 * day, 5);
+  ok('a four-week axis is ticked weekly',
+    week.length >= 3 && week.every((v) => v % (7 * day) === 0),
+    week.map((v) => stamp(v)).join(' | '));
+  const hours = niceTimeTicks(t0, t0 + day, 4);
+  ok('and a one-day axis by the hour',
+    hours.every((v) => v % 3600 === 0), hours.map((v) => stamp(v)).join(' | '));
+
+  /* Sixteen characters six times over is a smear, so the label carries only
+     what the spacing between marks justifies. */
+  check('daily marks are dated, not clocked', timeTickLabel(t0, 7 * day), '07-15');
+  check('hourly marks are clocked, not dated', timeTickLabel(t0, 3600), '00:00');
+  check('and a decade of them is just the year', timeTickLabel(t0, 400 * day), '2026');
+}
+
+section('tick marks and a grid');
+
+{
+  const svg = fresh();
+  const r = plot(svg, ramp(100), {
+    width: 500, height: 320, xLabel: 'x', yLabel: 'y',
+  });
+  const grid = svg.querySelector('path.grid');
+  const marks = svg.querySelector('path.tick-mark');
+  ok('a grid is drawn', grid !== null);
+  ok('and tick marks', marks !== null);
+  /* One path for the whole grid, for the same reason the dots are one path
+     per colour bin: nothing about the document grows with what is drawn. */
+  check('the grid is one node', svg.querySelectorAll('path.grid').length, 1);
+  const lines = (grid.getAttribute('d').match(/M /g) ?? []).length;
+  ok('with a line per tick', lines >= 6, `${lines} lines`);
+  check('and a mark per line',
+    (marks.getAttribute('d').match(/M /g) ?? []).length, lines);
+
+  /* The marks sit outside the plot area so they never land on data. */
+  const nums = (marks.getAttribute('d').match(/-?\d+(\.\d+)?/g) ?? []).map(Number);
+  ok('the marks are outside the frame',
+    nums.some((v) => v > r.frame.bottom) || nums.some((v) => v < r.frame.left),
+    `frame left ${r.frame.left} bottom ${r.frame.bottom}`);
+
+  /**
+   * The x labels used to be the two ends only, so a centred axis name passed
+   * between them. Ticks run the width of the axis now, and at the old 30 px
+   * of bottom padding the middle ones printed straight through "Absolute
+   * Salinity (g/kg)".
+   */
+  const name = [...svg.querySelectorAll('text.axis-name')]
+    .find((t) => t.textContent === 'x');
+  const xLabels = [...svg.querySelectorAll('text.tick')]
+    .filter((t) => Number(t.getAttribute('y')) > r.frame.bottom);
+  ok('the axis name is below the tick labels, not among them',
+    xLabels.length > 0
+      && xLabels.every((t) => Number(t.getAttribute('y')) < Number(name.getAttribute('y'))),
+    `name at y=${name.getAttribute('y')}, labels at ${xLabels.map((t) => t.getAttribute('y')).join(',')}`);
+}
+
+section('an exported figure says which glider it is');
+
+{
+  /* On screen the mission is in the page heading a few centimetres above, so
+     every figure repeating it is noise. In a file it is the only thing that
+     says which glider this is — "T-S diagram.png" in a folder of them names
+     nothing. */
+  /* `standalone` serialises through the global XMLSerializer, which a browser
+     has and Node does not. jsdom's is the same implementation the page uses. */
+  globalThis.XMLSerializer = dom.window.XMLSerializer;
+  const svg = fresh();
+  plot(svg, ramp(50), { width: 300, height: 200 });
+  const page = standalone(svg, {
+    title: 'cp_1155-20260429T1457 — T–S diagram',
+    caption: '5,152 of 11,410 samples',
+  });
+  ok('the title is drawn into the image',
+    page.markup.includes('cp_1155-20260429T1457'), page.markup.slice(0, 200));
+  ok('with the figure it belongs to', page.markup.includes('T–S diagram'));
+  ok('and the caption too', page.markup.includes('5,152 of 11,410 samples'));
+  ok('the image grew to hold them', page.height > 200, `${page.height}`);
 }
 
 done();

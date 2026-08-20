@@ -275,6 +275,7 @@ export function startDeploymentPage(): void {
       figuresEl.append(node);
 
       const figure = makeFigure(node, {
+        subject: () => info?.id,
         x: info?.timeVar ?? 'time',
         y: info?.depthVar ?? 'depth',
         c: name,
@@ -458,6 +459,7 @@ export function startDeploymentPage(): void {
     const tsNode = document.querySelector<HTMLElement>('[data-figure="ts"]');
     if (tsNode && !tsFigure) {
       tsFigure = makeFigure(tsNode, {
+        subject: () => info?.id,
         x: 'sa', y: 'ct', c: info.depthVar ?? 'depth',
         style: 'dots', dot: 2, height: 420, map: 'cmo.deep',
         underlay: isopycnalUnderlay,
@@ -471,6 +473,7 @@ export function startDeploymentPage(): void {
     const profileNode = document.querySelector<HTMLElement>('[data-figure="profile"]');
     if (profileNode && !profileFigure) {
       profileFigure = makeFigure(profileNode, {
+        subject: () => info?.id,
         x: 'temperature', y: info.depthVar ?? 'depth',
         c: info.timeVar, flipY: true, style: 'dots', dot: 2.5, height: 420,
         map: 'cmo.thermal',
@@ -485,6 +488,7 @@ export function startDeploymentPage(): void {
     const profileNode2 = document.querySelector<HTMLElement>('[data-figure="profile2"]');
     if (profileNode2 && !profileFigure2) {
       profileFigure2 = makeFigure(profileNode2, {
+        subject: () => info?.id,
         x: 'salinity', y: info.depthVar ?? 'depth',
         c: info.timeVar, flipY: true, style: 'dots', dot: 2.5, height: 420,
         map: 'cmo.haline',

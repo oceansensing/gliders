@@ -201,6 +201,75 @@ export function stamp(epochSeconds: number): string {
   return new Date(epochSeconds * 1000).toISOString().replace('T', ' ').replace(/\.\d+Z$/, '');
 }
 
+/**
+ * Round values to put ticks on, inside `[lo, hi]`.
+ *
+ * The classic 1–2–5 ladder: take the span the caller wants divided into,
+ * round the step up to the next 1, 2, 5 or 10 times a power of ten, and walk
+ * from the first multiple inside the range. A reader can do arithmetic in
+ * their head on 25, 30, 35; they cannot on 26.4, 31.7, 37.0.
+ *
+ * `count` is a target and not a promise — landing on a round step matters
+ * more than landing on a particular number of them, so the result comes back
+ * with anywhere from about half to about twice as many.
+ */
+export function niceTicks(lo: number, hi: number, count = 6): number[] {
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || !(hi > lo)) return [];
+  const raw = (hi - lo) / Math.max(1, count);
+  const magnitude = 10 ** Math.floor(Math.log10(raw));
+  const norm = raw / magnitude;
+  const step = (norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10) * magnitude;
+  const out: number[] = [];
+  /* The epsilon is against binary rounding, not against the data: without it
+     a step of 0.1 walking to exactly 3 stops at 2.9000000000000004. */
+  const eps = step * 1e-9;
+  for (let v = Math.ceil(lo / step) * step; v <= hi + eps; v += step) {
+    /* Snapped for the same reason — 0.30000000000000004 prints as 0.3 but
+       compares as something else, and the label formatter would show it. */
+    out.push(Math.abs(v) < eps ? 0 : Number(v.toFixed(12)));
+  }
+  return out;
+}
+
+/**
+ * The same, for an axis of epoch seconds.
+ *
+ * Time is not decimal and a 1–2–5 ladder on it produces ticks every 1.5 days
+ * at 03:47, which is a worse label than no label. So the step comes from a
+ * table of intervals a person would actually choose, and the marks land on
+ * multiples of it — midnight for a daily axis, the hour for an hourly one.
+ */
+const TIME_STEPS = [
+  60, 300, 900, 1800, 3600, 2 * 3600, 3 * 3600, 6 * 3600, 12 * 3600,
+  86400, 2 * 86400, 7 * 86400, 14 * 86400, 30 * 86400, 90 * 86400,
+  180 * 86400, 365 * 86400,
+];
+
+export function niceTimeTicks(lo: number, hi: number, count = 5): number[] {
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || !(hi > lo)) return [];
+  const want = (hi - lo) / Math.max(1, count);
+  const step = TIME_STEPS.find((s) => s >= want) ?? TIME_STEPS[TIME_STEPS.length - 1];
+  const out: number[] = [];
+  for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) out.push(v);
+  return out;
+}
+
+/**
+ * A time tick's label, at the resolution the spacing between them justifies.
+ *
+ * A full `2026-07-15 21:01` is sixteen characters, and six of them across a
+ * 450 px axis overlap into a smear. Ticks a day or more apart are dated and
+ * not clocked; ticks inside a day are clocked and not dated — the axis name
+ * and the caption carry the rest.
+ */
+export function timeTickLabel(seconds: number, step: number): string {
+  const full = stamp(seconds);
+  if (step >= 365 * 86400) return full.slice(0, 4);
+  if (step >= 28 * 86400) return full.slice(0, 7);
+  if (step >= 86400) return full.slice(5, 10);
+  return full.slice(11, 16);
+}
+
 export function plot(
   svg: SVGSVGElement,
   series: Series,
@@ -214,10 +283,19 @@ export function plot(
   // The color bar and its labels live outside the plot area, so the right
   // margin has to make room for them when there is one. A clock label is
   // wider than a number, so the axis gutters follow suit.
+  /**
+   * `bottom` is 30 because two things stack there and they used not to.
+   *
+   * The x labels were the two ends only, in the corners, so a centred axis
+   * name passed between them and 30 px held both on one line. Ticks run the
+   * width of the axis now, and at 30 the middle ones printed straight through
+   * "Absolute Salinity (g/kg)". 46 is the label's baseline at +15, the name's
+   * at +34, and 12 px of leading between them.
+   */
   const pad = {
     top: 12,
     right: coloring ? (options.cTime ? 132 : 92) : 14,
-    bottom: 30,
+    bottom: options.xLabel ? 46 : 30,
     left: options.yTime ? 108 : 58,
   };
 
@@ -324,19 +402,93 @@ export function plot(
     svg.append(el);
   };
 
+  /**
+   * Ticks, their marks, and a grid line each.
+   *
+   * **The plot used to carry two numbers per axis** — the ends, in the
+   * corners — which says what the range is and nothing about where anything
+   * inside it sits. Reading a feature off a section meant measuring against
+   * the frame with a finger.
+   *
+   * How many is set by the room available, not by taste: a label is about
+   * 7 px per character in the mono face these are set in, so an x axis gets
+   * one per 78 px and a y axis one per 34 px, and the 1–2–5 ladder rounds
+   * from there. Too many is worse than too few — overlapping labels are
+   * unreadable *and* look like a rendering fault.
+   *
+   * The grid is one path per axis rather than one per line, for the same
+   * reason the dots are one path per colour bin: nothing about the document
+   * should grow with what is drawn. `fill: none` matters here as much as on
+   * the axis — an unclosed grid path fills to a triangle across the plot.
+   */
+  const plotW = width - pad.left - pad.right;
+  const plotH = height - pad.top - pad.bottom;
+  const xTicks = options.xTime
+    ? niceTimeTicks(xLoV, xHiV, Math.max(2, Math.min(7, Math.floor(plotW / 78))))
+    : niceTicks(xLoV, xHiV, Math.max(2, Math.min(8, Math.floor(plotW / 78))));
+  const yTicks = options.yTime
+    ? niceTimeTicks(yLoV, yHiV, Math.max(2, Math.min(7, Math.floor(plotH / 34))))
+    : niceTicks(yLoV, yHiV, Math.max(2, Math.min(8, Math.floor(plotH / 34))));
+  const xStep = xTicks.length > 1 ? xTicks[1] - xTicks[0] : xHiV - xLoV;
+  const yStep = yTicks.length > 1 ? yTicks[1] - yTicks[0] : yHiV - yLoV;
+
+  const TICK = 4;
+  const grid: string[] = [];
+  const marks: string[] = [];
+  for (const v of xTicks) {
+    const at = px(v);
+    grid.push(`M ${at} ${pad.top} L ${at} ${height - pad.bottom}`);
+    marks.push(`M ${at} ${height - pad.bottom} L ${at} ${height - pad.bottom + TICK}`);
+  }
+  for (const v of yTicks) {
+    const at = py(v);
+    grid.push(`M ${pad.left} ${at} L ${width - pad.right} ${at}`);
+    marks.push(`M ${pad.left - TICK} ${at} L ${pad.left} ${at}`);
+  }
+  if (grid.length) {
+    const g = doc.createElementNS(NS, 'path');
+    g.setAttribute('class', 'grid');
+    g.setAttribute('d', grid.join(' '));
+    /* Inserted before the frame so the box is drawn over its own ends, and
+       before the underlay so contours and points sit on top of it. */
+    svg.insertBefore(g, axis);
+  }
+  if (marks.length) {
+    const m = doc.createElementNS(NS, 'path');
+    m.setAttribute('class', 'tick-mark');
+    m.setAttribute('d', marks.join(' '));
+    svg.append(m);
+  }
+
   // The y labels sit outside the plot area, so `pad.left` has to be wide
   // enough for the longest of them. It was 46 with values printed to four
   // decimals, so a depth of 125.2447 m ran off the left of the viewBox and
   // was silently clipped to "25.2447" — a chart reporting a fifth of the
   // dive it had just drawn, with nothing to say it had been cut.
-  label(mark(yLoV, options.yTime), pad.left - 5, py(yLoV) + 4, 'end');
-  label(mark(yHiV, options.yTime), pad.left - 5, py(yHiV) + 4, 'end');
-  label(mark(xLoV, options.xTime), pad.left, height - pad.bottom + 14, 'start');
-  label(mark(xHiV, options.xTime), width - pad.right, height - pad.bottom + 14, 'end');
+  const axisLabel = (v: number, isTime: boolean | undefined, step: number): string =>
+    (isTime ? timeTickLabel(v, step) : tick(v));
+  for (const v of yTicks) {
+    label(axisLabel(v, options.yTime, yStep), pad.left - TICK - 3, py(v) + 4, 'end');
+  }
+  for (const v of xTicks) {
+    label(axisLabel(v, options.xTime, xStep), px(v), height - pad.bottom + 15, 'middle');
+  }
+  /* With no round value inside the range there would be no numbers at all, so
+     the ends stand in — a one-sample plot, or a span narrower than the finest
+     step the ladder offers. */
+  if (!xTicks.length) {
+    label(mark(xLoV, options.xTime), pad.left, height - pad.bottom + 15, 'start');
+    label(mark(xHiV, options.xTime), width - pad.right, height - pad.bottom + 15, 'end');
+  }
+  if (!yTicks.length) {
+    label(mark(yLoV, options.yTime), pad.left - 5, py(yLoV) + 4, 'end');
+    label(mark(yHiV, options.yTime), pad.left - 5, py(yHiV) + 4, 'end');
+  }
   // Naming the axes is what stops a plot of two chosen variables being a
   // picture of nothing in particular.
   if (options.xLabel) {
-    label(options.xLabel, (pad.left + width - pad.right) / 2, height - 6, 'middle', 'axis-name');
+    label(options.xLabel, (pad.left + width - pad.right) / 2,
+      height - pad.bottom + 34, 'middle', 'axis-name');
   }
   if (options.yLabel) {
     const name = doc.createElementNS(NS, 'text');

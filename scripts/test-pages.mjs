@@ -350,6 +350,30 @@ section('a track on the browser map can be clicked');
   ok('and says so with a cursor', /path\.track-hit\s*\{[^}]*cursor:\s*pointer/.test(ALL_CSS));
 }
 
+section('the plots are ticked and gridded');
+
+{
+  /* Built at runtime by cloning a prototype, so the rules for the linework
+     have to be global and anchored on `[data-figure]` — scoped, a cloned
+     figure would draw its grid unstyled, which for a path means a black fill
+     across the whole plot. jsdom does no layout, so this reads the built CSS. */
+  ok('the grid is styled',
+    /\[data-figure\][^{]*\.grid\s*\{/.test(ALL_CSS), 'found in the built CSS');
+  ok('and the tick marks',
+    /\[data-figure\][^{]*\.tick-mark\s*\{/.test(ALL_CSS));
+  /* An SVG path fills by default. One unclosed path spanning the plot is the
+     worst case of forgetting this: a solid block over the data. */
+  ok('the grid has fill:none',
+    /\[data-figure\][^{]*\.grid\s*\{[^}]*fill:\s*none/.test(ALL_CSS));
+  ok('and so do the tick marks',
+    /\[data-figure\][^{]*\.tick-mark\s*\{[^}]*fill:\s*none/.test(ALL_CSS));
+  /* It is there to be measured against, not looked at: a grid that competes
+     with the data reads as structure in the ocean. */
+  const rule = /\[data-figure\][^{]*\.grid\s*\{([^}]*)\}/.exec(ALL_CSS)?.[1] ?? '';
+  const w = /stroke-width:\s*([\d.]+)/.exec(rule)?.[1];
+  ok('and it is thinner than the frame it sits inside', Number(w) < 1, `${w}px`);
+}
+
 section('a corrected date says it has been corrected');
 
 {

@@ -207,6 +207,32 @@ const { title, id, hint } = Astro.props;
     font-size: 10px;
   }
 
+  /* The mark on the frame, outside the plot area so it never sits on data. */
+  [data-figure] .tick-mark {
+    fill: none;
+    stroke: var(--border-strong);
+    stroke-width: 1;
+  }
+
+  /**
+   * The grid, deliberately at the edge of visible.
+   *
+   * It is there to be measured against and not to be looked at: a grid that
+   * competes with the data is worse than none, because the eye reads it as
+   * structure in the ocean. `--border` is the 1.33:1 hairline the tables use,
+   * and it is dropped further with opacity so a dense section shows through
+   * it rather than the other way round.
+   *
+   * `fill: none` for the same reason as the axis — one unclosed path across
+   * the whole plot fills to a triangle over the data.
+   */
+  [data-figure] .grid {
+    fill: none;
+    stroke: var(--border);
+    stroke-width: 0.5;
+    opacity: 0.7;
+  }
+
   [data-figure] .axis-name {
     fill: var(--text);
     font-family: var(--font-mono);
