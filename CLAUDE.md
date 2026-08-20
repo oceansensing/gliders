@@ -206,7 +206,27 @@ Without the atlas or a position, `SA` is Reference Salinity, and both paths
 ### Colour limits are chosen; axis limits are not
 
 An **axis** takes the true minimum and maximum of what it was given — scaling
-a point off the edge would hide it.
+a point off the edge would hide it — **and then leaves room for the marker
+sitting on it.** Ending exactly at the data draws half the outermost dot
+outside the box: measured on the deployment page, the extreme dots of every
+figure sat 0.0 px from the frame and overhung it by 0.8 px on the right, their
+own half-width. That is the same rule failing quietly rather than a different
+one.
+
+`AXIS_MARGIN` is **3%** of the span, not the 5% most plotting libraries
+default to, because the same code draws sections against time: 5% of a
+four-week window is a day and a half of blank at each end, which reads as the
+glider having reported nothing there. 3% is about thirteen pixels on a 450 px
+plot.
+
+**A limit the reader typed never gets it.** Padding one would draw a box that
+is not the one they asked for, and the count of samples outside the window
+would be counted against a different number than the axis prints. It is also
+what keeps a depth axis pinned at exactly 0 rather than opening at a negative
+depth. The **colour** axis takes no margin at all: its ends are printed on the
+bar and read as the range in force, so padding them would label the bar with a
+number the colours were never mapped from — and on a floored quantity it would
+print the negative concentration `Plottable.floor` exists to prevent.
 
 A **colour** axis is a lookup table with a couple of dozen entries, and
 stretching it to reach one outlier spends nearly all of them on water that is

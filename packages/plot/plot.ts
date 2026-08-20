@@ -56,6 +56,27 @@ export const DEFAULT_STEPS = 24;
  */
 export const DEFAULT_MAX_POINTS = 200000;
 
+/**
+ * Breathing room at the ends of an axis the data set, as a fraction of the
+ * span.
+ *
+ * **An axis that ends exactly at the data draws half of its outermost marker
+ * outside the box.** Measured on the deployment page: the extreme dots of
+ * every figure sat 0.0 px from the frame, and overhung it by 0.8 px on the
+ * right — their own half-width. The rule this pays for is the one that says a
+ * point must not be scaled off the edge, and a marker sliced by the frame is
+ * exactly that, just less obviously.
+ *
+ * Three per cent rather than the five most plotting libraries default to,
+ * because the same code draws sections against time. Five per cent of a
+ * four-week window is a day and a half of blank at each end, which reads as
+ * the glider having reported nothing there; three is about thirteen pixels on
+ * a 450 px plot, which reads as a margin.
+ *
+ * A limit the reader typed never gets it — see `bound`.
+ */
+export const AXIS_MARGIN = 0.03;
+
 export type PlotStyle = 'dots' | 'line' | 'both';
 
 /** Columnar input. `n` is how many entries of each array are meaningful. */
@@ -226,6 +247,7 @@ export function plot(
   const bound = (
     values: Float64Array | readonly number[],
     range: [number | null, number | null] | undefined,
+    margin = 0,
   ): [number, number] => {
     let lo = Infinity;
     let hi = -Infinity;
@@ -236,15 +258,32 @@ export function plot(
       if (v > hi) hi = v;
     }
     if (lo === Infinity) { lo = 0; hi = 1; }
-    if (range?.[0] !== null && range?.[0] !== undefined) lo = range[0];
-    if (range?.[1] !== null && range?.[1] !== undefined) hi = range[1];
+    /* Which ends the reader fixed, and which the data did. Only the data's
+       get a margin: a limit somebody typed has to be the limit that is drawn,
+       or the box does not say what they asked for and the count of samples
+       outside it is counted against a different number than the one on the
+       axis. It is also what keeps a depth axis pinned at exactly 0 rather
+       than opening at a negative depth. */
+    const readerLo = range?.[0] !== null && range?.[0] !== undefined;
+    const readerHi = range?.[1] !== null && range?.[1] !== undefined;
+    if (readerLo) lo = range![0]!;
+    if (readerHi) hi = range![1]!;
     // A zero-width axis divides by zero and puts every point in one place.
     if (hi === lo) hi = lo + 1;
+    /* Measured from the span before either end moves, so the two sides get
+       the same margin. */
+    const pad = (hi - lo) * margin;
+    if (!readerLo) lo -= pad;
+    if (!readerHi) hi += pad;
     return [lo, hi];
   };
 
-  const [xLoV, xHiV] = bound(xs, options.xRange);
-  const [yLoV, yHiV] = bound(ys, options.yRange);
+  const [xLoV, xHiV] = bound(xs, options.xRange, AXIS_MARGIN);
+  const [yLoV, yHiV] = bound(ys, options.yRange, AXIS_MARGIN);
+  /* **The colour axis takes no margin.** Its ends are printed on the bar and
+     read as the range in force — the 2nd and 98th percentiles, or what the
+     reader typed. Padding those would put a number on the bar that is not the
+     number the colours were mapped from. */
   const [cLoV, cHiV] = coloring && cs ? bound(cs, options.cRange) : [0, 1];
 
   /** An axis label: a clock where the axis is time, a number otherwise. */

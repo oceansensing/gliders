@@ -15,7 +15,7 @@
 import fs from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { check, done, near, ok, section } from './lib/check.mjs';
-import { plot, DEFAULT_MAX_POINTS, tick, stamp } from '../packages/plot/plot.ts';
+import { plot, AXIS_MARGIN, DEFAULT_MAX_POINTS, tick, stamp } from '../packages/plot/plot.ts';
 import { sample, COLORMAPS, knownColormap } from '../packages/plot/colormaps.ts';
 import { robustRange, ROBUST_LOW, ROBUST_HIGH } from '../packages/plot/robust.ts';
 
@@ -213,7 +213,11 @@ section('the underlay hook');
     },
   });
   ok('the underlay was called', seen !== null);
-  ok('with the data window', seen && seen.xLo === 0 && seen.xHi === 49,
+  /* The window the points were placed in, which is the data plus the margin
+     — an underlay that drew to the data's own extremes would stop short of
+     the frame and leave the contours hanging in the corners. */
+  ok('with the window the points were placed in',
+    seen && seen.xLo < 0 && seen.xHi > 49 && seen.xLo > -3 && seen.xHi < 52,
     JSON.stringify({ xLo: seen?.xLo, xHi: seen?.xHi }));
   ok('and a working projection',
     seen && seen.px(seen.xLo) === seen.left && seen.px(seen.xHi) === seen.right,
@@ -371,6 +375,70 @@ section('every colormap this site names actually exists');
   }
   ok('no figure asks for a map that does not exist', unknown.length === 0,
     unknown.join('; ') || 'all resolve');
+}
+
+
+section('an axis leaves room for the marker sitting on it');
+
+{
+  /**
+   * **An axis that ends exactly at the data draws half its outermost marker
+   * outside the box.** Measured on the deployment page before this: the
+   * extreme dots of every figure sat 0.0 px from the frame and overhung it by
+   * 0.8 px on the right, their own half-width.
+   */
+  const svg = fresh();
+  const r = plot(svg, ramp(50), { width: 400, height: 300 });
+  const span = 49;
+  near('the low end drops by the margin', r.frame.xLo, -span * AXIS_MARGIN, 1e-9);
+  near('and the high end rises by it', r.frame.xHi, 49 + span * AXIS_MARGIN, 1e-9);
+  ok('so the data sits inside the frame rather than on it',
+    r.frame.px(0) > r.frame.left && r.frame.px(49) < r.frame.right,
+    `px(0)=${r.frame.px(0).toFixed(1)} left=${r.frame.left}`);
+
+  /**
+   * **A limit the reader typed is the limit that is drawn.** Padding it would
+   * put a box on screen that is not the one they asked for, and the count of
+   * samples outside the window would be counted against a different number
+   * than the axis prints. It is also what keeps a depth axis pinned at
+   * exactly 0 rather than opening at a negative depth.
+   */
+  const fixed = plot(fresh(), ramp(50), {
+    width: 400, height: 300, xRange: [10, 40],
+  });
+  check('a reader\'s low limit is exact', fixed.frame.xLo, 10);
+  check('and their high limit', fixed.frame.xHi, 40);
+
+  /* One end typed, one end from the data — the shape a section's depth axis
+     has, where 0 is pinned and the deepest sample is not. */
+  const half = plot(fresh(), ramp(50), {
+    width: 400, height: 300, yRange: [0, null],
+  });
+  check('a pinned end stays pinned', half.frame.yLo, 0);
+  ok('while the other still gets its margin', half.frame.yHi > 49,
+    `${half.frame.yHi}`);
+
+  /**
+   * **The colour axis takes none.** Its ends are printed on the bar and read
+   * as the range in force, so padding them would label the bar with a number
+   * the colours were never mapped from — and on a quantity with a physical
+   * floor it would print a negative concentration, which is the thing
+   * `Plottable.floor` exists to stop.
+   *
+   * Read off the bar's own labels, because that is where a reader sees it.
+   */
+  const svgC = fresh();
+  const rc = plot(svgC, ramp(50), { width: 400, height: 300, cLabel: 'c' });
+  /* The bar's own two labels are the ones right of the plot area; the axes'
+     four sit on it or left of it. */
+  const onBar = [...svgC.querySelectorAll('text.tick')]
+    .filter((t) => Number(t.getAttribute('x')) > rc.frame.right)
+    .map((t) => t.textContent);
+  check('the bar carries two labels', onBar.length, 2);
+  ok('and they are the data itself, unpadded',
+    onBar.includes('49.0') && onBar.includes('0.000'), onBar.join(' '));
+  ok('while the axes around it did take their margin',
+    Math.abs(rc.frame.xHi - 49) > 1, `xHi ${rc.frame.xHi}`);
 }
 
 done();
