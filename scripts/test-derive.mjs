@@ -26,6 +26,7 @@ import { contour, levels } from '../packages/teos10/contour.ts';
 import { derive, sigmaField, DERIVED } from '../src/lib/seawater.ts';
 import { decodeFiles, toSource } from '../src/lib/local.ts';
 import { plottable } from '../src/lib/variables.ts';
+import { binIsTheLimit, medianVerticalStep, spokenMetres } from '../src/lib/sampling.ts';
 import { parseInfo } from '../packages/erddap/catalog.ts';
 
 const atlas = decodeAtlas(
@@ -283,6 +284,60 @@ section('raw Slocum files, end to end');
   ok('there are sections to draw', sections.length > 20, `${sections.length} plottable`);
   ok('and depth is an axis, not a section',
     source.variables.find((v) => v.name === 'depth')?.section === false);
+}
+
+
+section('how finely the glider itself sampled');
+
+{
+  /**
+   * The second limit on a section's vertical resolution, and the one the page
+   * never used to report. `cp_1155-20260429T1457` samples every 9.8 m, so its
+   * 1 m bin, a 5 m bin and every sample it took are within 3% of each other —
+   * a reader who narrows the window sees no improvement and, until this,
+   * no reason for it.
+   */
+  const dive = (step, n, from = 0) =>
+    Float64Array.from({ length: n }, (_, i) => from + i * step);
+
+  const ten = medianVerticalStep(dive(10, 200), 200);
+  near('a glider sampling every 10 m reads as 10 m', ten, 10, 1e-9);
+  near('and one sampling every 0.5 m as 0.5', medianVerticalStep(dive(0.5, 200), 200), 0.5, 1e-9);
+
+  /**
+   * The median rather than the mean, because the turn at the bottom of every
+   * profile contributes one large step per dive. Thirty dives of 30 samples
+   * at 10 m, each followed by a 300 m jump back to the surface: the mean is
+   * dragged to 19.7 m, a spacing the glider never sampled at.
+   */
+  const sawtooth = [];
+  for (let d = 0; d < 30; d++) for (let i = 0; i < 30; i++) sawtooth.push(i * 10);
+  const arr = Float64Array.from(sawtooth);
+  const steps = [];
+  for (let i = 1; i < arr.length; i++) if (Math.abs(arr[i] - arr[i - 1]) > 0) steps.push(Math.abs(arr[i] - arr[i - 1]));
+  const mean = steps.reduce((a, b) => a + b, 0) / steps.length;
+  near('the median steps over the profile turns', medianVerticalStep(arr, arr.length), 10, 1e-9);
+  ok('where the mean does not', mean > 15, `the mean of the same steps is ${mean.toFixed(1)} m`);
+
+  /* Gaps in the depth column are skipped, not counted as a zero step. */
+  const holed = Float64Array.from({ length: 300 }, (_, i) => (i % 3 === 1 ? NaN : Math.floor(i / 3) * 6));
+  ok('missing depths are skipped rather than read as no movement',
+    medianVerticalStep(holed, 300) > 0, `${medianVerticalStep(holed, 300)}`);
+
+  check('too few samples has no typical spacing', medianVerticalStep(dive(10, 10), 10), null);
+  check('and no depth column at all has none either', medianVerticalStep(undefined, 100), null);
+
+  /* Which of the two limits is in force, which is what the caption turns on. */
+  ok('a 5 m bin over 1 m sampling is the limit', binIsTheLimit(5, 1));
+  ok('a 1 m bin over 9.8 m sampling is not', !binIsTheLimit(1, 9.8));
+  ok('and neither is 1 m over 1.2 m — nobody would see the difference',
+    !binIsTheLimit(1, 1.2));
+  ok('full rate is never the limit', !binIsTheLimit(0, 9.8));
+  ok('with no measured spacing, the old advice stands', binIsTheLimit(5, null));
+
+  check('spacings are spoken to the precision they deserve', spokenMetres(9.83), '9.8');
+  check('a coarse one loses its decimal', spokenMetres(12.4), '12');
+  check('and a fine one keeps two', spokenMetres(0.42), '0.42');
 }
 
 done();

@@ -42,7 +42,7 @@ import { request, type RequestOptions } from './catalog.ts';
 import { ErddapError } from './catalog.ts';
 import { parseJsonlCsvStream } from './parse.ts';
 import { tabledapUrl } from './url.ts';
-import { applyFlags, DEFAULT_REJECT, qcColumnFor } from './qc.ts';
+import { applyFlags, DEFAULT_REJECT, dropFillRows, qcColumnFor } from './qc.ts';
 
 const HOUR = 3600;
 const DAY = 86400;
@@ -412,13 +412,23 @@ function finish(
     }
   }
 
+  /* After the flags, because a flagged temperature is already NaN and would
+     not read as a zero — and before anything is derived from these columns.
+     See `dropFillRows`: the row is a surfacing placeholder, not a sample. */
+  const fills = dropFillRows(
+    merged,
+    rows,
+    [info.timeVar, info.latVar, info.lonVar],
+    ['temperature', 'salinity', info.pressureVar],
+  );
+
   const units = new Map<string, string>();
   for (const name of columns) {
     const v = info.variables.find((x) => x.name === name);
     if (v?.units) units.set(name, v.units);
   }
 
-  return { rows, columns: merged, units, resolution, partial };
+  return { rows, columns: merged, units, resolution, partial, fills };
 }
 
 const nonNull = <T>(x: T | null): x is T => x !== null;

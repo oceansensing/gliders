@@ -74,3 +74,67 @@ export function applyFlags(
   }
   return blanked;
 }
+
+/**
+ * Blank out the surfacing records some datasets publish as zeros.
+ *
+ * **A fill value the publisher forgot to mark, which reads as a measurement
+ * of fresh water at freezing point.** `cp_1155-20260429T1457` carries one row
+ * per surfacing — 170 of them in a four-week window, 1.5% of the record — on
+ * which *every* science column is a placeholder: depth, pressure,
+ * temperature, salinity, conductivity, chlorophyll, CDOM and PAR are all
+ * exactly `0`, and the published density is 999.8445, which is what TEOS-10
+ * returns for fresh water at 0 °C. The position and the timestamp are real;
+ * that GPS fix is why the row exists at all.
+ *
+ * Left in, one such row is enough to be visible everywhere at once:
+ *
+ * - the T–S diagram's axes ran from **SA 0.000** and **CT 0.015**, so every
+ *   real sample was crushed into the top-right corner of the plot;
+ * - the σ₀ colour bar started at **−0.157 kg/m³**, a negative anomaly no
+ *   ocean has;
+ * - and the robust 2–98% limits could not save it, because at 3.2% of the
+ *   samples with a value the placeholders reach past the 2nd percentile.
+ *
+ * **The test is the conjunction, and it is exact.** Temperature, salinity and
+ * pressure all precisely `0` is not something seawater does — not in the
+ * Great Lakes datasets, where the water is fresh but never 0.0000 °C, and not
+ * under ice, where it is cold but never 0.0000 dbar. Anything less strict
+ * than all three at once would start deleting measurements.
+ *
+ * Everything on the row goes, not only the three that were tested: a
+ * dissolved-oxygen value computed with temperature and salinity compensation
+ * from zeros is not a measurement either, whatever it says. Time and position
+ * are kept, so the track still shows the glider surfacing.
+ *
+ * Unconditional, unlike the QARTOD filter, and reported rather than silent —
+ * a flag is a test's opinion about a number, and this is not a number.
+ */
+export function dropFillRows(
+  columns: ReadonlyMap<string, Float64Array>,
+  rows: number,
+  keep: readonly (string | undefined)[],
+  probes: readonly (string | undefined)[],
+): number {
+  const triple = probes
+    .map((name) => (name ? columns.get(name) : undefined))
+    .filter((c): c is Float64Array => c !== undefined);
+  /* All three have to be present to make the judgement. With only two of
+     them the conjunction is weaker than it looks, and the whole defence of
+     this rule is how narrow it is. */
+  if (triple.length < 3) return 0;
+
+  const spare = new Set(keep.filter((n): n is string => Boolean(n)));
+  const clear: Float64Array[] = [];
+  for (const [name, values] of columns) {
+    if (!spare.has(name) && !isFlagColumn(name)) clear.push(values);
+  }
+
+  let dropped = 0;
+  for (let i = 0; i < rows; i++) {
+    if (!triple.every((c) => c[i] === 0)) continue;
+    dropped++;
+    for (const c of clear) c[i] = NaN;
+  }
+  return dropped;
+}

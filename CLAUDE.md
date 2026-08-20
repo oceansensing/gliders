@@ -116,6 +116,29 @@ six-hour probe. A finer bin costs **no server time**; it costs bytes.
 
 After the change: 71,922 rows, first section at 566 ms, complete at 2.9 s.
 
+### There are two limits on vertical resolution, and only one gets better
+
+The bin ladder answers "how much of the record can we afford". The other
+limit is how much record there is, and the page never used to say it:
+`cp_1155-20260429T1457` is a Pioneer glider whose science samples are **9.6 m
+apart**, so its 1 m overview bin, a 5 m bin and every sample it took are
+within 3% of each other. A reader who narrows the window gets exactly what
+was promised — full rate, 11,410 rows, no `orderByClosest` in any request —
+and sees a section that has not changed, with nothing on screen explaining
+why.
+
+So the caption reports the glider's own spacing, measured as the **median**
+absolute step between consecutive fixes that have a depth. The median rather
+than the mean because the turn at the bottom of each profile contributes one
+large step per dive: on a synthetic sawtooth the mean reads 19.7 m for a
+glider sampling every 10. Below fifty steps it says nothing rather than
+inventing a typical spacing from four of them.
+
+Which limit is in force decides which sentence is printed — "narrow the
+window to load a stretch at full rate" only when the bin is finer than the
+glider, with half a bin of slack so a 1 m bin against 1.2 m sampling does not
+send anyone after 20% they will not see. `lib/sampling.ts`.
+
 ### A chosen window starts the ladder at full rate
 
 Narrowing is only worth doing if it buys resolution, so `binMetres: 0` puts
@@ -205,6 +228,37 @@ than a defence against a sensor.
 |---|---|---|
 | chlorophyll | −0.08 – 8.54 | **0.00 – 6.85 µg/L** |
 | temperature | 5.92 – 27.2 | **6.16 – 26.4 °C** (trimmed, not floored) |
+
+### A row of zeros is a fill value, not fresh water at freezing
+
+`cp_1155-20260429T1457` publishes one row per surfacing on which **every**
+science column is a placeholder: depth, pressure, temperature, salinity,
+conductivity, chlorophyll, CDOM and PAR all exactly `0`, and the published
+density 999.8445 — TEOS-10 for fresh water at 0 °C. 170 of them in a
+four-week window, 1.5% of the record. The position and the timestamp are
+real; that GPS fix is why the row exists.
+
+One such row is visible everywhere at once, and all three symptoms were
+reported as separate bugs:
+
+| | with the rows | without |
+|---|---|---|
+| T–S axes | SA **0.000**–36.7, CT **0.015**–29.9 | 32.3–36.7, 7.14–29.9 |
+| σ₀ colour bar | **−0.157**–27.3 kg/m³ | 21.6–27.3 |
+| temperature section | 0–29.9 °C | 8.28–28.1 |
+
+**The robust 2–98% limits could not save it.** At 3.2% of the samples that
+have a value, the placeholders reach past the 2nd percentile — the defence
+against one bad sensor reading is not a defence against 170 identical ones.
+
+The test is the conjunction and it is exact: temperature, salinity *and*
+pressure all precisely `0`. Seawater does not do that — not in the Great
+Lakes datasets, where the water is fresh but never 0.0000 °C, and not under
+ice, where it is cold but never 0.0000 dbar. Anything looser starts deleting
+measurements. Everything on the row goes, not only the three tested, because
+a dissolved-oxygen value compensated from zeros is not a measurement either.
+Unconditional rather than a toggle, and counted on screen: a QARTOD flag is a
+test's opinion about a number, and this is a row with no number in it.
 
 ### A point with no colour value is not drawn
 
@@ -744,6 +798,14 @@ Each shipped, was found by running it, and now has a gate.
   at `opacity: 0`. Guarded on the size actually changing, and `fadeAnimation`
   is off — the fade is driven by `requestAnimationFrame`, which a background
   tab never runs.
+- **A section's vertical grid looked like a bug in the bin ladder.** It was
+  the glider: 9.6 m native sampling, so narrowing the window loaded full rate
+  exactly as designed and changed nothing anyone could see. The page reported
+  the limit it had chosen and not the limit it was up against.
+- **170 rows of zeros ran three figures at once.** A surfacing placeholder
+  published as `0` for every measurement put the T–S axes at SA 0.000, the
+  σ₀ bar at −0.157 kg/m³ and the temperature section at 0 °C — reported as
+  three separate faults, and one row's worth of cause.
 - **A link's choice was silently dropped.** Assigning a value to an empty
   `<select>` does nothing, and the track's menus are filled only once the data
   says which columns exist — so `?track=sigma0` fell back to time. The wanted

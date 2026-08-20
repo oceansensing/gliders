@@ -23,7 +23,7 @@ import {
 import { parseJsonlCsv } from '../packages/erddap/parse.ts';
 import { listDatasets, parseInfo, request, ErddapError } from '../packages/erddap/catalog.ts';
 import { fetchData } from '../packages/erddap/fetch.ts';
-import { applyFlags, qcColumnFor, isFlagColumn, QARTOD } from '../packages/erddap/qc.ts';
+import { applyFlags, qcColumnFor, isFlagColumn, dropFillRows, QARTOD } from '../packages/erddap/qc.ts';
 
 const read = (name) => JSON.parse(fs.readFileSync(`scripts/fixtures/erddap/${name}`, 'utf8'));
 const BASE = 'https://gliders.ioos.us/erddap';
@@ -345,6 +345,73 @@ section('QC flags');
      reject everything. */
   check('an unflagged row is kept', values[4], 14);
   check('and the count is reported', blanked, 2);
+}
+
+
+section('a surfacing row of zeros is not a measurement');
+
+{
+  /**
+   * `cp_1155-20260429T1457` publishes one row per surfacing on which every
+   * science column is a placeholder — depth, pressure, temperature, salinity,
+   * conductivity, chlorophyll, CDOM and PAR all exactly 0, and density
+   * 999.8445, which is TEOS-10 for fresh water at 0 °C. 170 of them in a
+   * four-week window, 1.5% of the record, and enough to run the T–S diagram's
+   * axes down to SA 0.000 and the σ₀ bar down to −0.157 kg/m³.
+   */
+  const make = () => new Map(Object.entries({
+    time: Float64Array.from([100, 200, 300]),
+    latitude: Float64Array.from([36.0, 36.1, 36.2]),
+    longitude: Float64Array.from([-74.8, -74.7, -74.6]),
+    temperature: Float64Array.from([18.2, 0, 17.9]),
+    salinity: Float64Array.from([35.1, 0, 35.2]),
+    pressure: Float64Array.from([12.3, 0, 14.1]),
+    density: Float64Array.from([1025.4, 999.8445, 1025.6]),
+    chlorophyll: Float64Array.from([0.8, 0, 0.9]),
+    temperature_qc: Float64Array.from([1, 1, 1]),
+  }));
+  const keep = ['time', 'latitude', 'longitude'];
+  const probes = ['temperature', 'salinity', 'pressure'];
+
+  const cols = make();
+  check('the placeholder row is found', dropFillRows(cols, 3, keep, probes), 1);
+  ok('its temperature is gone', Number.isNaN(cols.get('temperature')[1]));
+  ok('and its salinity', Number.isNaN(cols.get('salinity')[1]));
+  /* Not one of the three that were tested, and the reason the rule clears the
+     whole row: 999.8445 is not zero and would have survived a narrower one. */
+  ok('and the density derived from them', Number.isNaN(cols.get('density')[1]));
+  /* Nor is oxygen or chlorophyll trustworthy on a row where the compensation
+     inputs are zero. */
+  ok('and the optics beside them', Number.isNaN(cols.get('chlorophyll')[1]));
+  ok('the position survives — the GPS fix is why the row exists',
+    cols.get('latitude')[1] === 36.1 && cols.get('longitude')[1] === -74.7);
+  ok('and the timestamp', cols.get('time')[1] === 200);
+  ok('the flag column is left alone', cols.get('temperature_qc')[1] === 1);
+  ok('the real rows are untouched',
+    cols.get('temperature')[0] === 18.2 && cols.get('temperature')[2] === 17.9);
+
+  /**
+   * **The conjunction is the whole defence of this rule.** Water that is
+   * fresh, or at freezing, or at the surface is ordinary; all three at once
+   * to four decimal places is a fill value. Anything looser starts deleting
+   * measurements — the DAC carries Great Lakes deployments where salinity is
+   * near zero and the temperature is not.
+   */
+  const fresh = make();
+  fresh.get('temperature')[1] = 3.4;
+  check('fresh water at the surface is kept', dropFillRows(fresh, 3, keep, probes), 0);
+  ok('with its temperature intact', fresh.get('temperature')[1] === 3.4);
+
+  const icy = make();
+  icy.get('pressure')[1] = 40;
+  check('freezing water at depth is kept', dropFillRows(icy, 3, keep, probes), 0);
+
+  /* Two of three present is a weaker test than it looks, so it is not made. */
+  const partial = make();
+  partial.delete('pressure');
+  check('with no pressure column, no judgement is made',
+    dropFillRows(partial, 3, keep, ['temperature', 'salinity', undefined]), 0);
+  ok('and nothing is blanked', partial.get('temperature')[1] === 0);
 }
 
 done();

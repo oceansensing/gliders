@@ -69,6 +69,9 @@ export interface TableData {
   resolution: Resolution;
   /** True when a chunk failed and the rest was kept. */
   partial: boolean;
+  /** Rows blanked as surfacing placeholders — see `dropFillRows`. Reported
+      rather than silent: the reader should know the record held them. */
+  fills: number;
 }
 
 /** How much of the record a fetch asked for. */

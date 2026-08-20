@@ -23,6 +23,7 @@ import { isopycnalUnderlay } from './isopycnals.ts';
 import { plottable, type Plottable } from './variables.ts';
 import { Deriver } from './derived.ts';
 import { DERIVED_NAMES } from './seawater.ts';
+import { binIsTheLimit, medianVerticalStep, spokenMetres } from './sampling.ts';
 import { withBase } from './url.ts';
 
 /**
@@ -305,6 +306,11 @@ export function startDeploymentPage(): void {
     }
   }
 
+  /** How finely the glider itself sampled — see `lib/sampling.ts`. */
+  const nativeStep = (): number | null => (table && info
+    ? medianVerticalStep(table.columns.get(info.depthVar ?? 'depth'), table.rows)
+    : null);
+
   function refresh(): void {
     const src = source();
     for (const figure of sectionFigures.values()) figure.update(src);
@@ -321,14 +327,48 @@ export function startDeploymentPage(): void {
     const scope = window_
       ? `${date(window_.from)} → ${date(window_.to)}`
       : 'the whole deployment';
+    /**
+     * What is limiting the section, said plainly.
+     *
+     * Two different limits look identical on screen — the bin this page
+     * chose, and the spacing the glider sampled at — and only one of them
+     * gets better if the reader narrows the window. Saying which is in force
+     * is the difference between "narrow it and see" and "narrowing this will
+     * not help, and here is why".
+     */
+    const step = nativeStep();
+    const bin = table.resolution.kind === 'binned' ? (table.resolution.binMetres ?? 0) : 0;
+    const binBites = binIsTheLimit(bin, step);
+
     resolutionEl.textContent = table.resolution.kind === 'binned'
       ? `On screen: ${scope}, at most one sample per `
         + `${table.resolution.binMetres} m per profile — `
         + `${table.rows.toLocaleString()} rows. Where the glider sampled more `
-        + `coarsely than that, this is every sample it took. Narrow the window `
-        + `above, or drag across a section, to load a stretch at full rate.`
+        + `coarsely than that, this is every sample it took.`
+        + (binBites
+          ? ' Narrow the window above, or drag across a section, to load a'
+            + ' stretch at full rate.'
+          : step !== null
+            ? ` This glider sampled about every ${spokenMetres(step)} m, which is`
+              + ' coarser than the bin, so the bin is not what is limiting'
+              + ' this — a narrower window will not resolve finer.'
+            : '')
       : `On screen: ${scope} at full rate — every sample the glider took, `
-        + `${table.rows.toLocaleString()} rows.`;
+        + `${table.rows.toLocaleString()} rows.`
+        + (step !== null
+          ? ` It sampled about every ${spokenMetres(step)} m in the vertical, which`
+            + ' is as fine as this record goes.'
+          : '');
+    /* Said out loud, because it is a change to what the reader is looking at
+       and they did not ask for it. Reported as a count rather than offered as
+       a toggle: a QARTOD flag is a test's opinion about a number, and this is
+       a row where there is no number. */
+    if (table.fills) {
+      resolutionEl.textContent +=
+        ` ${table.fills.toLocaleString()} surfacing row`
+        + `${table.fills === 1 ? '' : 's'} carried zero for every measurement`
+        + ' and are not drawn.';
+    }
     if (table.partial) {
       /* A window the server would not answer for. On this server that is
          also how an *empty* window arrives — a glider on the surface, a day

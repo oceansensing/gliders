@@ -30,7 +30,7 @@ export {
 export type { QueryOptions } from './url.ts';
 
 export {
-  QARTOD, DEFAULT_REJECT, qcColumnFor, isFlagColumn, applyFlags,
+  QARTOD, DEFAULT_REJECT, qcColumnFor, isFlagColumn, applyFlags, dropFillRows,
 } from './qc.ts';
 
 export type {
